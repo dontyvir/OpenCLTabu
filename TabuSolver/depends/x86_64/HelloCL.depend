@@ -1,0 +1,12 @@
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/samples/opencl/SDKUtil/include/SDKFile.hpp
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/samples/opencl/SDKUtil/include/SDKCommon.hpp
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/include/CL/cl_gl.h
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/include/CL/cl_gl_ext.h
+build/debug/x86_64//HelloCL.o: HelloCL.cpp
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/include/CL/cl.hpp
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/include/CL/cl_ext.h
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/include/CL/cl_platform.h
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/samples/opencl/SDKUtil/include/SDKApplication.hpp
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/samples/opencl/SDKUtil/include/SDKCommandArgs.hpp
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/include/CL/cl.h
+build/debug/x86_64//HelloCL.o: /home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/include/CL/opencl.h
