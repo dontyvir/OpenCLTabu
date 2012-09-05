@@ -17,6 +17,7 @@
 #include "Solution.h"
 #include "SolutionBuilder.h"
 #include "Solver.h"
+#include "ParallelSolver.h"
 #include "Matrix.h"
 
 int main(int argc, char* argv[]) {
@@ -31,13 +32,14 @@ int main(int argc, char* argv[]) {
 	std::string filename = "";
 	opterr = 0;
 	int c;
+	bool parallel_cost = false;
 
 	if(argc < 13){
 		std::cout << "argumentos : -i <numero iteraciones> -d <param diversificacion> -c <celdas> -m <máquinas max por celda> -t <turnos tabu> -f <archivo entrada>\n";
 		return EXIT_SUCCESS;
 	}
 
-	while ((c = getopt(argc, argv, "i:d:m:p:c:M:t:f:")) != -1){
+	while ((c = getopt(argc, argv, "i:d:m:p:c:M:t:f:P")) != -1){
 		switch (c) {
 		case 'i':
 
@@ -62,6 +64,10 @@ int main(int argc, char* argv[]) {
 		case 'f':
 
 			filename.assign(optarg, strlen(optarg));
+			break;
+		case 'P':
+
+			parallel_cost = true;
 			break;
 		case '?':
 			if (optopt == 'c')
@@ -92,12 +98,20 @@ int main(int argc, char* argv[]) {
 			  << " machines : " << machines
 			  << " parts : " << parts << std::endl;
 
+	tabu::Solution *sol = NULL;
+	tabu::Solver *solver = NULL;
 
-	tabu::Solver *solver = new tabu::Solver(iterations, diversification_param,
-			machines, parts, cells, max_machines_cell, mat,
-			tabu_turns);
-	tabu::Solution *sol = solver->solve();
-
+	if(parallel_cost) {
+		solver = new tabu::ParallelSolver(iterations, diversification_param,
+				machines, parts, cells, max_machines_cell, mat,
+				tabu_turns);
+		sol = solver->solve();
+	} else {
+		solver = new tabu::Solver(iterations, diversification_param,
+				machines, parts, cells, max_machines_cell, mat,
+				tabu_turns);
+		sol = solver->solve();
+	}
 // ----------------------------------------------------------------------------------
 
 	std::cout << "\n----- global results ------" << std::endl;

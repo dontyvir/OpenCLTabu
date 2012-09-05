@@ -17,7 +17,6 @@ Matrix::Matrix(const int _rows, const int _cols) : rows(_rows), cols(_cols)
 
 
 Matrix::~Matrix() {
-	// TODO Auto-generated destructor stub
 }
 
 std::vector<int> &Matrix::operator [](int x) {

@@ -260,7 +260,7 @@ Solution *Solver::solve(){
 		std::cout << "Unable to open file";
 	}
 
-	Solver::init();
+	init();
 	// ------ print solution -------
 	print_solution(current_solution);
 	//print_file_solution(0, current_solution, out_file);

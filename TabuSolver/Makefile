@@ -4,10 +4,10 @@
 # .cxx or .cpp replaced by .o
 # Be *** SURE *** to put the .o files here rather than the source files
 
-ProjectObjects =  InstanceParser.o Main.o Solution.o SolutionBuilder.o Solver.o Matrix.o TabuList.o
+ProjectObjects =  InstanceParser.o Main.o Solution.o SolutionBuilder.o Solver.o Matrix.o TabuList.o ParallelSolver.o
 
 #------------ no need to change between these lines -------------------
-LIBS = -L/home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/TempSDKUtil/lib/x86_64 -L/opt/AMDAPP/lib/x86_64
+LIBS = -L/home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/TempSDKUtil/lib/x86_64 -L/opt/AMDAPP/lib/x86_64 -lpthread -ldl -lSDKUtil  -lOpenCL
 INCLUDES = -I/home/donty/tarballs/amd-app-sdk/AMD-APP-SDK-v2.7-RC-lnx64/samples/opencl/SDKUtil/include -I/opt/AMDAPP/include
 CFLAGS = -g -Wall $(INCLUDES)
 BUILD_DIR = build/debug/x86_64/HelloCL build/debug/x86_64
@@ -36,5 +36,6 @@ InstanceParser.o:	InstanceParser.h	Matrix.h
 Solution.o:	Solution.h
 SolutionBuilder.o:	SolutionBuilder.h
 Solver.o:	Solver.h
+ParallelSolver.o : ParallelSolver.h
 TabuList.o : TabuList.h
-Main.o:	InstanceParser.h Solution.h Solver.h 
+Main.o:	InstanceParser.h Solution.h Solver.h ParallelSolver.h
