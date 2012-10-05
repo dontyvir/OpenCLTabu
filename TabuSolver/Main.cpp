@@ -8,10 +8,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <string>
-#include <SDKFile.hpp>
-#include <SDKCommon.hpp>
-#include <SDKApplication.hpp>
 #include <unistd.h>
 #include "InstanceParser.h"
 #include "Solution.h"
@@ -208,6 +204,6 @@ int main(int argc, char* argv[]) {
 		std::cout << std::endl;
 	}
 
-	return SDK_SUCCESS;
+	return EXIT_SUCCESS;
 }
 

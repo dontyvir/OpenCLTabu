@@ -7,18 +7,16 @@
 
 #ifndef PARALLELSOLVER_H_
 #define PARALLELSOLVER_H_
+#define __NO_STD_STRING
 
-#include "Solver.h"
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-//#include <SDKFile.hpp>
-//#include <SDKCommon.hpp>
-//#include <SDKApplication.hpp>
-
-#define __NO_STD_STRING
-
-//#include <CL/cl.hpp>
+#include <CL/cl.hpp>
+#include <SDKUtil/SDKCommon.hpp>
+#include <SDKUtil/SDKFile.hpp>
+#include <SDKUtil/SDKApplication.hpp>
+#include "Solver.h"
 
 namespace tabu {
 
@@ -31,9 +29,11 @@ public:
 	virtual ~ParallelSolver();
 
 private:
-//	cl::Kernel kernel;
-//	cl::CommandQueue queue;
+	cl::Context context;
+	cl::Kernel kernel;
+	cl::CommandQueue queue;
 	long get_cost(Solution *solution);
+	long get_cpu_cost(Solution *solution);
 	int OpenCL_init();
 	void init();
 	std::vector<std::vector<int> > parts_machines;
