@@ -20,6 +20,34 @@
 
 namespace tabu {
 
+class StaticMatrix {
+
+	public:
+		int getElem(int row, int col);
+		int *getRow(int row);
+		int rows;
+		int cols;
+		int *storage;
+};
+
+class VariableMatrix {
+
+	public:
+		int getElem(int row, int col);
+		int *getRow(int row);
+		int rows;
+		int *cols; // length = row
+		int *storage;
+};
+
+typedef struct cl_params {
+
+	int n_cells;
+	int n_parts;
+	int n_machines;
+	int max_machines_cell;
+} ClParams;
+
 class ParallelSolver: public tabu::Solver {
 public:
 	ParallelSolver(unsigned int max_iterations, int diversification_param,
@@ -36,7 +64,24 @@ private:
 	long get_cpu_cost(Solution *solution);
 	int OpenCL_init();
 	void init();
+	VariableMatrix *vector_to_var_mat(std::vector<std::vector<int> > vector,int max_cols);
+	StaticMatrix *matrix_to_StaticMatrix(Matrix *mat, int size);
 	std::vector<std::vector<int> > parts_machines;
+
+	cl::Buffer buf_out_cost;
+    cl::Buffer buf_cl_params;
+
+    cl::Buffer buf_parts_machines_storage;
+    cl::Buffer buf_parts_machines_lengths;
+
+    cl::Buffer buf_machines_in_cells_storage;
+    cl::Buffer buf_machines_in_cells_lengths;
+
+    cl::Buffer buf_machines_not_in_cells_storage;
+    cl::Buffer buf_machines_not_in_cells_lengths;
+
+    cl::Buffer buf_incidence_matrix;
+    cl::Buffer buf_incidence_matrix_storage;
 };
 
 } /* namespace tabu */

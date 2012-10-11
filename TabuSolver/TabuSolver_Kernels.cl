@@ -1,62 +1,28 @@
 
-class SquareMatrix {
-	
-	private:
-		int **storage;
-	public:
-		SquareMatrix(int rows, int cols);
-		int getElem(int row, int col);
-		int *getRow(int row);
-		int rows;
-		int cols;
-};
+typedef struct cl_params {
 
-SquareMatrix::SquareMatrix(int rows, int cols){
-	
-}
-
-int SquareMatrix::getElem(int row, int col){
-	return storage[row][col];
-}
-
-int *SquareMatrix::getRow(int row){
-	return storage[row];
-}
-
-class VariableMatrix {
-
-	private:
-		int **storage;
-		
-	public:
-		VariableMatrix(int rows, int* cols);
-		int getElem(int row, int col);
-		int *getRow(int row);
-		int rows;
-		int *cols; // length = row
-};
-
-VariableMatrix::VariableMatrix(int rows, int* cols){
-	
-}
-
-int VariableMatrix::getElem(int row, int col){
-	return storage[row][col];
-}
-
-int *VariableMatrix::getRow(int row){
-	return storage[row];
-}
+	int n_cells;
+	int n_parts;
+	int n_machines;
+	int max_machines_cell;
+} ClParams;
 
 __kernel void
-get_cost(__global int *input,
-		__global int *output,
-		__global int *max_machines_cell,
-		__global int *n_parts,
-		__global VariableMatrix *parts_machines,
-		__global VariableMatrix *machines_in_cells,
-		__global VariableMatrix *machines_not_in_cells,
-		__global SquareMatrix *incidence_matrix
+get_cost(
+		__global int *cost_out,
+		__global ClParams *params,
+		
+		__global int *parts_machines_storage,
+		__global int *parts_machines_lengths,
+		
+		__local int *machines_in_cells_storage,
+		__local int *machines_in_cells_lengths,
+		
+		__local int *machines_not_in_cells_storage,
+		__local int *machines_not_in_cells_lengths,
+		
+		__global int *incidence_matrix_storage
+
 )
 {
     uint k = get_global_id(0); //machines_not_in_cells.size();
@@ -65,33 +31,36 @@ get_cost(__global int *input,
     
     long cost = 0;
 
+    // buffer_matrix[row][col] = buffer[row*max_cols+col]
+    
+    
 	//------------penalizacion y_ik <= Mmax------------------
 
-	int machines_cell = machines_in_cells->cols[k];
+	int machines_cell = machines_in_cells_lengths[k];
 
-	int difference = machines_cell - (*max_machines_cell);
+	int difference = machines_cell - params->max_machines_cell;
 	int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
-	cost += difference * (*n_parts) * sign;
+	cost += difference * (params->n_parts) * sign;
 
 	// -------------------------------------------------------
 
 	//int machines_not_in = machines_not_in_cells->cols[k];
 
 	// máquinas no en celda
-
-	int i = machines_not_in_cells->getElem(k,i_n); // máquina no en celda
-	int machines_in = machines_in_cells->cols[k];
+	
+	int i = machines_not_in_cells_storage[k*params->n_cells+i_n]; // máquina no en celda
+	int machines_in = machines_in_cells_storage[k];
 	//int parts = parts_machines->cols[i];
 
-	int j = parts_machines->getElem(i,j_); // parte de máquina no en celda
+	int j = parts_machines_storage[i*params->n_cells+j_]; // parte de máquina no en celda
 
 	for(int i_in=0;i_in<machines_in;i_in++){
 
-		int i_ = machines_in_cells->getElem(k,i_in); // máquina en celda
+		int i_ = machines_in_cells_storage[k*params->n_machines+i_in]; // máquina en celda
 
 		// costo+ si la máquina en celda tiene la parte que también es de la máquina no en celda
-		cost += incidence_matrix->getElem(i_,j);
+		cost += incidence_matrix_storage[i_*params->n_parts+j];
 	}
 	
-    *output=cost;
+	*cost_out=cost;
 }

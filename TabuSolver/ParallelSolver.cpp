@@ -46,6 +46,40 @@ inline int zero(int a){
 	return zero;
 }
 
+VariableMatrix* ParallelSolver::vector_to_var_mat(
+		std::vector<std::vector<int> > vector, int max_cols) {
+
+	VariableMatrix *mat = new VariableMatrix();
+
+	int *storage = new int[vector.size()*max_cols];
+	mat->rows = vector.size();
+	mat->cols = new int[vector.size()];
+
+	for(int i=0;i<(signed int)vector.size();i++){
+		std::copy(vector[i].begin(), vector[i].begin()+vector[i].size(), storage+i*max_cols);
+		mat->cols[i] = vector[i].size();
+	}
+	mat->storage = storage;
+
+	return mat;
+}
+
+StaticMatrix* ParallelSolver::matrix_to_StaticMatrix(Matrix *mat, int size) {
+
+	StaticMatrix *smat = new StaticMatrix();
+
+	int *storage = new int[mat->rows*size];
+	smat->rows = mat->rows;
+	smat->cols = mat->cols;
+
+	for(int i=0;i<(signed int)mat->rows;i++){
+		std::copy(mat->storage[i].begin(), mat->storage[i].begin()+mat->storage[i].size(), storage+i*size);
+	}
+	smat->storage = storage;
+
+	return smat;
+}
+
 int ParallelSolver::OpenCL_init() {
 
     cl_int err;
@@ -86,7 +120,7 @@ int ParallelSolver::OpenCL_init() {
     cl_context_properties cps[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)(*i)(), 0 };
 
     // Creating a context AMD platform
-    this->context = cl::Context(CL_DEVICE_TYPE_CPU, cps, NULL, NULL, &err);
+    context = cl::Context(CL_DEVICE_TYPE_CPU, cps, NULL, NULL, &err);
     if (err != CL_SUCCESS) {
         std::cout << "Context::Context() failed (" << err << ")\n";
         exit(SDK_FAILURE);
@@ -136,7 +170,7 @@ int ParallelSolver::OpenCL_init() {
         exit(SDK_FAILURE);
     }
 
-    this->kernel = cl::Kernel(program, "get_cost", &err);
+    kernel = cl::Kernel(program, "get_cost", &err);
     if (err != CL_SUCCESS) {
         std::cout << "Kernel::Kernel() failed (" << err << ")\n";
         exit(SDK_FAILURE);
@@ -146,11 +180,140 @@ int ParallelSolver::OpenCL_init() {
         exit(SDK_FAILURE);
     }
 
-    this->queue = cl::CommandQueue(context, devices[0], 0, &err);
+    queue = cl::CommandQueue(context, devices[0], 0, &err);
     if (err != CL_SUCCESS) {
         std::cout << "CommandQueue::CommandQueue() failed (" << err << ")\n";
         exit(SDK_FAILURE);
     }
+
+    // fixed input buffers
+
+    buf_cl_params = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(ClParams),
+    					NULL,
+    					&err);
+
+    buf_parts_machines_storage = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(int)*n_parts*n_machines,
+    					NULL,
+    					&err);
+    buf_parts_machines_lengths = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(int)*n_machines,
+    					NULL,
+    					&err);
+
+    buf_incidence_matrix = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(StaticMatrix),
+    					NULL,
+    					&err);
+    buf_incidence_matrix_storage = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(int)*n_parts*n_machines,
+    					NULL,
+    					&err);
+
+    cl_int status;
+    cl::Event writeEvt;
+
+    ClParams *params = new ClParams();
+    params->max_machines_cell = max_machines_cell;
+    params->n_cells = n_cells;
+    params->n_machines = n_machines;
+    params->n_parts = n_parts;
+
+    status = queue.enqueueWriteBuffer(
+    		buf_cl_params,
+    		CL_FALSE,
+    		0,
+    		sizeof(ClParams),
+    		params,
+    		NULL,
+    		&writeEvt);
+
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_max_machines_cell)");
+
+    VariableMatrix *var_parts_machines = vector_to_var_mat(parts_machines,n_machines);
+    status = queue.enqueueWriteBuffer(
+    		buf_parts_machines_storage,
+    		CL_FALSE,
+    		0,
+    		sizeof(int)*n_parts*n_machines,
+    		var_parts_machines->storage,
+    		NULL,
+    		&writeEvt);
+
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_parts_machines_storage)");
+    status = queue.enqueueWriteBuffer(
+    		buf_parts_machines_lengths,
+    		CL_FALSE,
+    		0,
+    		sizeof(int)*n_machines,
+    		var_parts_machines->cols,
+    		NULL,
+    		&writeEvt);
+
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_parts_machines_storage)");
+
+
+	StaticMatrix *static_incidence = matrix_to_StaticMatrix(incidence_matrix, n_parts);
+    status = queue.enqueueWriteBuffer(
+    		buf_incidence_matrix,
+    		CL_FALSE,
+    		0,
+    		sizeof(StaticMatrix),
+    		static_incidence,
+    		NULL,
+    		&writeEvt);
+
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_incidence_matrix)");
+    status = queue.enqueueWriteBuffer(
+    		buf_incidence_matrix_storage,
+    		CL_FALSE,
+    		0,
+    		sizeof(int)*n_parts*n_machines,
+    		static_incidence->storage,
+    		NULL,
+    		&writeEvt);
+
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_incidence_matrix_storage)");
+
+
+
+    status = queue.flush();
+    CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
+
+    // out buffer
+    buf_out_cost = cl::Buffer(context,
+    					CL_MEM_READ_WRITE,
+    					sizeof(long),
+    					NULL, &err);
+
+    // variable input buffers
+    buf_machines_in_cells_storage = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(int)*n_machines*n_cells,
+    					NULL,
+    					&err);
+    buf_machines_in_cells_lengths = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(int)*n_cells,
+    					NULL,
+    					&err);
+
+    buf_machines_not_in_cells_storage = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(int)*n_cells*n_machines,
+    					NULL,
+    					&err);
+    buf_machines_not_in_cells_lengths = cl::Buffer(context,
+    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(int)*n_cells,
+    					NULL,
+    					&err);
 
     // Done Passed
     //OpenCL_initialized = true;
@@ -257,24 +420,112 @@ long ParallelSolver::get_cost(Solution* solution) {
 
 	long cost=0;
 
+	std::vector<std::vector<int> > machines_in_cells(n_cells,std::vector<int>());
+	std::vector<std::vector<int> > machines_not_in_cells(n_cells,std::vector<int>());
+	for(unsigned int k=0;k<n_cells;k++){
+		for(unsigned int i=0;i<n_machines;i++){
+			if(solution->cell_vector[i] == (signed int)k)
+				machines_in_cells[k].push_back(i);
+			else
+				machines_not_in_cells[k].push_back(i);
+		}
+	}
+
     cl_int err;
 
-    cl::Buffer src_buf;
-    cl::Buffer dst_buf;
+    /////////////////////////runCLKernels////////////////////////////////////////
+    cl_int status;
+    cl_int eventStatus = CL_QUEUED;
 
-    src_buf = cl::Buffer(context,
-    					CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-    					sizeof(long),
-    					(void *)cost,
-    					&err);
+    cl::Event writeEvt;
 
-    dst_buf = cl::Buffer(context,
-    					CL_MEM_READ_WRITE,
-    					sizeof(long),
-    					NULL, &err);
+    VariableMatrix *var_machines_in_cells = vector_to_var_mat(machines_in_cells,n_cells);
+    status = queue.enqueueWriteBuffer(
+    		buf_machines_in_cells_storage,
+    		CL_FALSE,
+    		0,
+    		sizeof(int)*n_cells*n_machines,
+    		var_machines_in_cells->storage,
+    		NULL,
+    		&writeEvt);
 
-    kernel.setArg(0, sizeof(void *), &src_buf);
-    kernel.setArg(1, sizeof(void *), &dst_buf);
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_in_cells)");
+    status = queue.enqueueWriteBuffer(
+    		buf_machines_in_cells_lengths,
+    		CL_FALSE,
+    		0,
+    		sizeof(int)*n_cells,
+    		var_machines_in_cells->cols,
+    		NULL,
+    		&writeEvt);
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_in_cells)");
+
+
+    VariableMatrix *var_machines_not_in_cells = vector_to_var_mat(machines_not_in_cells,n_cells);
+    status = queue.enqueueWriteBuffer(
+    		buf_machines_not_in_cells_storage,
+    		CL_FALSE,
+    		0,
+    		sizeof(int)*n_cells*n_machines,
+    		var_machines_not_in_cells->storage,
+    		NULL,
+    		&writeEvt);
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_not_in_cells)");
+    status = queue.enqueueWriteBuffer(
+    		buf_machines_not_in_cells_lengths,
+    		CL_FALSE,
+    		0,
+    		sizeof(int)*n_cells,
+    		var_machines_not_in_cells->cols,
+    		NULL,
+    		&writeEvt);
+    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_not_in_cells)");
+
+
+
+    status = queue.flush();
+    CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
+
+    eventStatus = CL_QUEUED;
+    while(eventStatus != CL_COMPLETE)
+    {
+        status = writeEvt.getInfo<cl_int>(
+                    CL_EVENT_COMMAND_EXECUTION_STATUS,
+                    &eventStatus);
+        CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
+    }
+
+    //////////////////////////////////////////////////////////////////
+
+    status = kernel.setArg(0, &buf_out_cost);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_out_cost)");
+
+    status = kernel.setArg(1, &buf_cl_params);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_cl_params)");
+
+    status = kernel.setArg(2, &buf_parts_machines_storage);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_parts_machines_storage)");
+
+    status = kernel.setArg(3, &buf_parts_machines_lengths);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_parts_machines_lengths)");
+
+    status = kernel.setArg(4, &buf_machines_in_cells_storage);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_in_cells_storage)");
+
+    status = kernel.setArg(5, &buf_machines_in_cells_lengths);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_in_cells_lengths)");
+
+    status = kernel.setArg(6, &buf_machines_not_in_cells_storage);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_not_in_cells_storage)");
+
+    status = kernel.setArg(7, &buf_machines_not_in_cells_lengths);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_not_in_cells_lengths)");
+
+    status = kernel.setArg(8, &buf_incidence_matrix);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_incidence_matrix)");
+
+    status = kernel.setArg(9, &buf_incidence_matrix_storage);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_incidence_matrix_storage)");
 
     cl::NDRange globalThreads(2, 2);
     cl::NDRange localThreads(2, 2);
@@ -291,22 +542,45 @@ long ParallelSolver::get_cost(Solution* solution) {
        return SDK_FAILURE;
     }
 
-    long ret_val=0;
-    cl::Event readEvt;
-    queue.enqueueReadBuffer(
-                dst_buf,
-                CL_FALSE,
-                0,
-                sizeof(long),
-                (void *)&ret_val,
-                NULL,
-                &readEvt);
+    ////////////////////////////////////////////////////////////////////////
 
+    status = queue.flush();
+     CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
 
-    err = queue.finish();
-    if (err != CL_SUCCESS) {
-        std::cout << "Event::wait() failed (" << err << ")\n";
-    }
+     eventStatus = CL_QUEUED;
+     while(eventStatus != CL_COMPLETE)
+     {
+         status = ndrEvt.getInfo<cl_int>(
+                     CL_EVENT_COMMAND_EXECUTION_STATUS,
+                     &eventStatus);
+         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
+     }
+
+     // Enqueue readBuffer
+     cl::Event readEvt;
+     status = queue.enqueueReadBuffer(
+    		 	 buf_out_cost,
+                 CL_FALSE,
+                 0,
+                 sizeof(long),
+                 (void *)&cost,
+                 NULL,
+                 &readEvt);
+     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueReadBuffer failed. (outputImageBuffer)");
+
+     status = queue.flush();
+     CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
+
+     eventStatus = CL_QUEUED;
+     while(eventStatus != CL_COMPLETE)
+     {
+         status = readEvt.getInfo<cl_int>(
+                     CL_EVENT_COMMAND_EXECUTION_STATUS,
+                     &eventStatus);
+         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
+     }
+
+    ////////////////////////////////////////////////////////////////////////
 
     return cost;
 }

@@ -28,7 +28,7 @@ Solver::Solver(unsigned int max_iterations, int diversification_param,
 	this->n_cells = n_cells;
 	this->max_machines_cell = max_machines_cell;
 	this->tabu_turns = tabu_turns;
-	this->tabu_list_max_length = tabu_list_max_length;
+	this->tabu_list_max_length = 0;
 }
 
 Solver::~Solver() {
