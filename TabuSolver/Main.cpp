@@ -94,6 +94,8 @@ int main(int argc, char* argv[]) {
 			  << " machines : " << machines
 			  << " parts : " << parts << std::endl;
 
+	delete parser;
+
 	tabu::Solution *sol = NULL;
 	tabu::Solver *solver = NULL;
 
@@ -108,6 +110,9 @@ int main(int argc, char* argv[]) {
 				tabu_turns);
 		sol = solver->solve();
 	}
+
+
+
 // ----------------------------------------------------------------------------------
 
 	std::cout << "\n----- global results ------" << std::endl;
@@ -203,6 +208,9 @@ int main(int argc, char* argv[]) {
 		}
 		std::cout << std::endl;
 	}
+
+	delete[] rows;
+	delete solver;
 
 	return EXIT_SUCCESS;
 }

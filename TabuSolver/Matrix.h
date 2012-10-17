@@ -20,8 +20,8 @@ public:
 	std::vector<int>& operator [] (int x);
 	std::vector<std::vector<int> > &getMatrix();
 	std::vector<std::vector<int> > storage;
-	size_t rows;
-	size_t cols;
+	int rows;
+	int cols;
 };
 
 } /* namespace tabu */
