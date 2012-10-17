@@ -54,8 +54,9 @@ public:
 
 private:
 	cl::Context context;
-	cl::Kernel kernel;
-	cl::Kernel kernel1;
+	cl::Kernel kernel_cost;
+	cl::Kernel kernel_pen;
+	cl::Kernel kernel_pen_Mmax;
 	cl::CommandQueue queue;
 	long get_cost(Solution *solution);
 	long get_cpu_cost(Solution *solution);
