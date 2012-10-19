@@ -29,6 +29,18 @@ Solver::Solver(unsigned int max_iterations, int diversification_param,
 	this->max_machines_cell = max_machines_cell;
 	this->tabu_turns = tabu_turns;
 	this->tabu_list_max_length = 0;
+	this->iter_cost_time = 0;
+	this->total_cost_time = 0;
+
+	// precómputo de vector
+	parts_machines.assign(n_machines,std::vector<int>());
+	for(unsigned int i=0;i<n_machines;i++){
+		for(unsigned int j=0;j<n_parts;j++){
+			if(incidence_matrix->getMatrix()[i][j] == 1){
+				parts_machines[i].push_back(j);
+			}
+		}
+	}
 }
 
 Solver::~Solver() {
@@ -37,8 +49,8 @@ Solver::~Solver() {
 void Solver::set_incidence_matrix(Matrix *incidence_matrix) {
 	this->incidence_matrix = incidence_matrix;
 }
-
-long Solver::get_cost(Solution *solution) {
+/*
+long Solver::get_cost_old(Solution *solution) {
 
 	long cost = 0;
 
@@ -65,18 +77,18 @@ long Solver::get_cost(Solution *solution) {
 
 	// infactible penalization
 
-	/*
+
 	// y_ik = 1
-	for(unsigned int i=0;i<n_machines;i++){ // sum i=1...M
-		int in_cells = 0;
-		for(unsigned int k=0;k<n_cells;k++){ // sum k=1...C
-			if(solution->cell_vector[i] == (signed int)k){
-				in_cells++;
-			}
-		}
-		cost += (1 - in_cells) * n_parts;
-	}
-	 */
+//	for(unsigned int i=0;i<n_machines;i++){ // sum i=1...M
+//		int in_cells = 0;
+//		for(unsigned int k=0;k<n_cells;k++){ // sum k=1...C
+//			if(solution->cell_vector[i] == (signed int)k){
+//				in_cells++;
+//			}
+//		}
+//		cost += (1 - in_cells) * n_parts;
+//	}
+
 
 	//z_jk = 1
 	for(unsigned int j=0;j<n_parts;j++){
@@ -110,6 +122,89 @@ long Solver::get_cost(Solution *solution) {
 		if((unsigned int)machines_cell > max_machines_cell){
 			cost += (machines_cell - max_machines_cell) * n_parts;
 		}
+	}
+
+	return cost;
+}
+*/
+long Solver::get_cost(Solution *solution) {
+	long cost = 0;
+
+	std::vector<std::vector<int> > machines_in_cells(n_cells,std::vector<int>());
+	std::vector<std::vector<int> > machines_not_in_cells(n_cells,std::vector<int>());
+	for(unsigned int k=0;k<n_cells;k++){
+		for(unsigned int i=0;i<n_machines;i++){
+			if(solution->cell_vector[i] == (signed int)k)
+				machines_in_cells[k].push_back(i);
+			else
+				machines_not_in_cells[k].push_back(i);
+		}
+	}
+
+	for(unsigned int k=0;k<n_cells;k++){ // sum k=1...C // celdas
+
+		//------------penalizacion y_ik <= Mmax------------------
+
+		int machines_cell = machines_in_cells[k].size();
+
+		int difference = machines_cell - max_machines_cell;
+		//int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
+		//cost += difference * n_parts * sign;
+		cost += difference * n_parts * (difference > 0);
+
+		// -------------------------------------------------------
+
+		int machines_not_in = machines_not_in_cells[k].size();
+
+		for(int i_n=0;i_n<machines_not_in;i_n++){ // máquinas no en celda
+
+			int i = machines_not_in_cells[k][i_n]; // máquina no en celda
+			int machines_in = machines_in_cells[k].size();
+			int parts = parts_machines[i].size();
+
+			for(int j_=0;j_<parts;j_++){ // partes de máquinas no en la celda
+
+				int j = parts_machines[i][j_]; // parte de máquina no en celda
+
+				for(int i_in=0;i_in<machines_in;i_in++){
+
+					int i_ = machines_in_cells[k][i_in]; // máquina en celda
+
+					// costo+ si la máquina en celda tiene la parte que también es de la máquina no en celda
+					cost += incidence_matrix->getMatrix()[i_][j];
+				}
+			}
+		}
+	}
+
+	for(unsigned int j=0;j<n_parts;j++){
+
+		int in_cells = 0;
+
+		for(unsigned int k=0;k<n_cells;k++){
+
+			int machines_in = machines_in_cells[k].size();
+
+			for(int i_in=0;i_in<machines_in;i_in++){
+
+				int i_ = machines_in_cells[k][i_in]; // máquina en celda
+				int parts = parts_machines[i_].size();
+
+				for(int j_in=0;j_in<parts;j_in++){ // partes de máquinas en la celda
+
+					int j_ = parts_machines[i_][j_in]; // parte de máquina en celda
+
+					//in_cells += equal(j,j_);
+					in_cells += (j==(unsigned)j_);
+				}
+			}
+		}
+
+		// cost+=n_parts*in_cells para in_cells != 1
+		//cost += (in_cells - 1) * n_parts * (-1*zero(in_cells));
+		cost += (in_cells - 1) * n_parts * (in_cells > 0);
+//		if(in_cells > 0)
+//			std::cout << "in cells " << in_cells << std::endl;
 	}
 
 	return cost;
@@ -150,6 +245,7 @@ void Solver::init() {
 
 	//tabu list
 	tabu_list = new TabuList(n_machines, tabu_turns);
+
 }
 
 void Solver::local_search(){
@@ -265,7 +361,15 @@ Solution *Solver::solve(){
 	print_solution(current_solution);
 	//print_file_solution(0, current_solution, out_file);
 	// ------ print solution -------
+
+   clock_t start, end, total;
+
+	start = clock();
+
+
 	for(unsigned int i=0;i<max_iterations;i++){
+
+		iter_cost_time = 0;
 
 		std::cout << "----- iteration "<< i << " ------" << std::endl;
 
@@ -287,9 +391,18 @@ Solution *Solver::solve(){
 
 		tabu_list->update_tabu();
 
+	    //printf("\nExecution time in milliseconds = %0.3f ms\n", (iter_cost_time / 1000000.0) );
+	    total_cost_time += iter_cost_time;
+
 		if(global_best_cost == 0)
 			break;
 	}
+
+	end = clock();
+	total = end - start;
+
+    printf("\nTotal OpenCL Kernel time in milliseconds = %0.3f ms\n", (total_cost_time / 1000000.0) );
+    printf("Total CPU time in milliseconds = %0.3f ms\n", total /1.0);
 
 	return global_best;
 }

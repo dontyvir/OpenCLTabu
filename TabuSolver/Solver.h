@@ -51,6 +51,9 @@ protected:
 	virtual long get_cost(Solution *solution);
 	void print_solution(Solution *sol);
 	void print_file_solution(unsigned int iteration, Solution *sol, std::ofstream &file);
+	double iter_cost_time;
+	double total_cost_time;
+	std::vector<std::vector<int> > parts_machines;
 };
 
 } /* namespace tabu */

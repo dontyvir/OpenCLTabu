@@ -64,7 +64,7 @@ private:
 	void init();
 	VariableMatrix *vector_to_var_mat(std::vector<std::vector<int> > vector,int max_cols);
 	StaticMatrix *matrix_to_StaticMatrix(Matrix *mat);
-	std::vector<std::vector<int> > parts_machines;
+	//std::vector<std::vector<int> > parts_machines; // defined in solver.h
 
 	cl::Buffer buf_out_cost;
     cl::Buffer buf_cl_params;

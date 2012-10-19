@@ -35,6 +35,36 @@ void print_array(int *array,int size){
 	std::cout << std::endl;
 }
 
+void print_2DArray(int *array, int fils, int cols){
+
+	for(int i=0;i<fils;i++){
+		for(int j=0;j<cols;j++){
+			std::cout << array[i*cols+j] << " ";
+		}
+	}
+	std::cout << std::endl;
+}
+
+void print_VarArray(int *array, int fils, int *cols, int maxcols){
+
+	for(int i=0;i<fils;i++){
+		for(int j=0;j<cols[i];j++){
+			std::cout << array[i*maxcols+j] << " ";
+		}
+	}
+	std::cout << std::endl;
+}
+
+void print_vector(std::vector<std::vector<int> > vector){
+
+	for(std::vector<int>::size_type i = 0; i != vector.size(); i++) {
+		for(std::vector<int>::size_type j = 0; j != vector[i].size(); j++) {
+			std::cout << vector[i][j] << " ";
+		}
+	}
+	std::cout << std::endl;
+}
+
 inline int different(int a,int b){
 
 	int diff = a - b;
@@ -217,7 +247,8 @@ int ParallelSolver::OpenCL_init() {
         exit(SDK_FAILURE);
     }
 
-    queue = cl::CommandQueue(context, devices[0], 0, &err);
+    // queue profiling enabled
+    queue = cl::CommandQueue(context, devices[0], CL_QUEUE_PROFILING_ENABLE, &err);
     if (err != CL_SUCCESS) {
         std::cout << "CommandQueue::CommandQueue() failed (" << err << ")\n";
         exit(SDK_FAILURE);
@@ -287,7 +318,7 @@ int ParallelSolver::OpenCL_init() {
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_max_machines_cell)");
 
     //std::cout << "parts_machines" << std::endl;
-    VariableMatrix *var_parts_machines = vector_to_var_mat(parts_machines,n_machines);
+    VariableMatrix *var_parts_machines = vector_to_var_mat(parts_machines,n_parts);
     //std::cout << "enqueue parts_machines" << std::endl;
     status = queue.enqueueWriteBuffer(
     		buf_parts_machines_storage,
@@ -398,8 +429,9 @@ long ParallelSolver::get_cpu_cost(Solution* solution) {
 		int machines_cell = machines_in_cells[k].size();
 
 		int difference = machines_cell - max_machines_cell;
-		int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
-		cost += difference * n_parts * sign;
+		//int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
+		//cost += difference * n_parts * sign;
+		cost += difference * n_parts * (difference > 0);
 
 		// -------------------------------------------------------
 
@@ -443,14 +475,17 @@ long ParallelSolver::get_cpu_cost(Solution* solution) {
 
 					int j_ = parts_machines[i_][j_in]; // parte de máquina en celda
 
-					in_cells += equal(j,j_);
+					//in_cells += equal(j,j_);
+					in_cells += (j==(unsigned)j_);
 				}
-
 			}
 		}
 
 		// cost+=n_parts*in_cells para in_cells != 1
-		cost += (in_cells - 1) * n_parts * (-1*zero(in_cells));
+		//cost += (in_cells - 1) * n_parts * (-1*zero(in_cells));
+		cost += (in_cells - 1) * n_parts * (in_cells > 0);
+//		if(in_cells > 0)
+//			std::cout << "in cells " << in_cells << std::endl;
 	}
 
 	return cost;
@@ -458,15 +493,6 @@ long ParallelSolver::get_cpu_cost(Solution* solution) {
 
 void ParallelSolver::init() {
 
-	// precómputo de vector
-	parts_machines.assign(n_machines,std::vector<int>());
-	for(unsigned int i=0;i<n_machines;i++){
-		for(unsigned int j=0;j<n_parts;j++){
-			if(incidence_matrix->getMatrix()[i][j] == 1){
-				parts_machines[i].push_back(j);
-			}
-		}
-	}
 	OpenCL_init();
 	Solver::init();
 }
@@ -517,9 +543,13 @@ long ParallelSolver::get_cost(Solution* solution) {
     		&writeEvt);
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_in_cells)");
 
+
     //std::cout << "machines_not_in_cells" << std::endl;
     VariableMatrix *var_machines_not_in_cells = vector_to_var_mat(machines_not_in_cells,n_machines);
-    //std::cout << "enqueue machines_not_in_cells" << std::endl;
+    //print_vector(machines_not_in_cells);
+    //print_VarArray(var_machines_not_in_cells->storage, n_cells, var_machines_not_in_cells->cols, n_machines);
+    //std::cout << "---------------------" << std::endl;
+
     status = queue.enqueueWriteBuffer(
     		buf_machines_not_in_cells_storage,
     		CL_FALSE,
@@ -529,7 +559,6 @@ long ParallelSolver::get_cost(Solution* solution) {
     		NULL,
     		&writeEvt);
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_not_in_cells)");
-    //std::cout << "enqueue lengths machines_not_in_cells" << std::endl;
 
     status = queue.enqueueWriteBuffer(
     		buf_machines_not_in_cells_lengths,
@@ -640,12 +669,15 @@ long ParallelSolver::get_cost(Solution* solution) {
     //cl::NDRange globalThreads_pen(1, 1 );
     cl::NDRange globalThreads_pen_Mmax(n_cells );
     cl::Event ndrEvt;
+    cl::Event kernel_costos_evt;
+    cl::Event kernel_pen_evt;
+    cl::Event kernel_penMmax_evt;
 
     // Running CL program
 
     // kernel de costos ---------------------------------
     err = queue.enqueueNDRangeKernel(
-    		kernel_cost,cl::NullRange, globalThreads_cost, cl::NullRange, 0, &ndrEvt
+    		kernel_cost,cl::NullRange, globalThreads_cost, cl::NullRange, 0, &kernel_costos_evt
     );
 
     if (err != CL_SUCCESS) {
@@ -656,7 +688,7 @@ long ParallelSolver::get_cost(Solution* solution) {
 
     // kernel penalización -------------------------------
     err = queue.enqueueNDRangeKernel(
-    		kernel_pen,cl::NullRange, globalThreads_pen, cl::NullRange, 0, &ndrEvt
+    		kernel_pen,cl::NullRange, globalThreads_pen, cl::NullRange, 0, &kernel_pen_evt
     );
 
     if (err != CL_SUCCESS) {
@@ -667,7 +699,7 @@ long ParallelSolver::get_cost(Solution* solution) {
 
     // kernel penalización Mmax ------------------------------
     err = queue.enqueueNDRangeKernel(
-    		kernel_pen_Mmax,cl::NullRange, globalThreads_pen_Mmax, cl::NullRange, 0, &ndrEvt
+    		kernel_pen_Mmax,cl::NullRange, globalThreads_pen_Mmax, cl::NullRange, 0, &kernel_penMmax_evt
     );
 
     if (err != CL_SUCCESS) {
@@ -683,11 +715,67 @@ long ParallelSolver::get_cost(Solution* solution) {
      eventStatus = CL_QUEUED;
      while(eventStatus != CL_COMPLETE)
      {
-         status = ndrEvt.getInfo<cl_int>(
+         status = kernel_costos_evt.getInfo<cl_int>(
                      CL_EVENT_COMMAND_EXECUTION_STATUS,
                      &eventStatus);
          CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
      }
+
+     eventStatus = CL_QUEUED;
+     while(eventStatus != CL_COMPLETE)
+     {
+         status = kernel_pen_evt.getInfo<cl_int>(
+                     CL_EVENT_COMMAND_EXECUTION_STATUS,
+                     &eventStatus);
+         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
+     }
+
+     eventStatus = CL_QUEUED;
+     while(eventStatus != CL_COMPLETE)
+     {
+         status = kernel_penMmax_evt.getInfo<cl_int>(
+                     CL_EVENT_COMMAND_EXECUTION_STATUS,
+                     &eventStatus);
+         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
+     }
+
+     // kernel time ------------------------------------------------------
+
+     std::vector<cl::Event> events;
+     events.push_back(kernel_costos_evt);
+     events.push_back(kernel_pen_evt);
+     events.push_back(kernel_penMmax_evt);
+
+     cl::WaitForEvents(events);
+
+     cl_ulong time_start, time_end;
+     double total_time = 0;
+
+     status = kernel_costos_evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_start);
+     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_START");
+     status = kernel_costos_evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_end);
+     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_END");
+
+     total_time = time_end - time_start;
+
+     status = kernel_pen_evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_start);
+     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_START");
+     status = kernel_pen_evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_end);
+     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_END");
+
+     total_time += time_end - time_start;
+
+     status = kernel_penMmax_evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_start);
+     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_START");
+     status = kernel_penMmax_evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_end);
+     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_END");
+
+     total_time += time_end - time_start;
+
+     iter_cost_time += total_time;
+
+     // --------------------------------------------------------------------------
+
      //std::cout << "enqueue read buffer" << std::endl;
      // Enqueue readBuffer
      cl::Event readEvt;
@@ -712,6 +800,9 @@ long ParallelSolver::get_cost(Solution* solution) {
                      &eventStatus);
          CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
      }
+
+//    long cpu_cost = get_cpu_cost(solution);
+//    std::cout << "cpu_cost: " << cpu_cost << " cost: " << cost << std::endl;
 
     return (long)cost;
 }

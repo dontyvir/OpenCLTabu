@@ -47,20 +47,21 @@ __kernel void cost(
 	}
 	
 	int n_parts = params->n_parts;
+	int n_machines = params->n_machines;
 	int in_cells = 0;
 	
-	int i_ = machines_in_cells_storage[k*machines_in+i_in]; // máquina en celda
-	int parts = parts_machines_lengths[i_];
+	int i_ = machines_in_cells_storage[k*n_machines+i_in]; // índice matriz incidencia (i_) máquina (i_in) en celda (k)
+	int parts = parts_machines_lengths[i_]; // número de partes para la máquina (i_)
 
-	for(int j_in=0;j_in<parts;j_in++){ // partes de máquinas en la celda
+	for(int j_in=0;j_in<parts;j_in++){ // índice j_in de partes de máquina (i_) en la celda (k)
 
-		int j_ = parts_machines_storage[i_*parts+j_in]; // parte de máquina en celda
+		int j_ = parts_machines_storage[i_*n_parts+j_in]; // índice matriz incidencia (j_) de parte parte de máquina (i_) en celda (k)
 
-		in_cells += equal(j,j_);
+		in_cells += (j==(unsigned)j_); // si la parte j se encuentra en la celda k
 	}
 
 	// cost+=n_parts*in_cells para in_cells != 1
-    unsigned int cost = (in_cells - 1) * n_parts * (-1*zero(in_cells));
+    unsigned int cost = (in_cells - 1) * n_parts * (in_cells > 0); // costo+ si la parte se encuentra en más de una celda
     atom_add (cost_out,cost);
 }
 
@@ -83,30 +84,28 @@ __kernel void penalization(
     uint i_n = get_global_id(0);
     uint k = get_global_id(1);
     
-	int machines_not_in_cell = machines_not_in_cells_lengths[k];
+	int machines_not_in = machines_not_in_cells_lengths[k];
 	
-	if(!(i_n < machines_not_in_cell)){
+	if(!(i_n < machines_not_in)){
 		return;
 	}
 
 	int n_parts = params->n_parts;
-    unsigned int cost = 0;	
-
-	int machines_not_in = machines_not_in_cells_lengths[k];
-
-	int i = machines_not_in_cells_storage[k*machines_not_in+i_n]; // máquina no en celda
-	int machines_in = machines_in_cells_lengths[k];
-	int parts = parts_machines_lengths[i];
-
+	int n_machines = params->n_machines;
+    unsigned int cost = 0;
+    
+	int i = machines_not_in_cells_storage[k*n_machines+i_n]; // máquina (i_n) no en celda (k)
+	int machines_in = machines_in_cells_lengths[k]; // máquinas en celda (k)
+	int parts = parts_machines_lengths[i]; // número de partes para la máquina (i)
 	
-	for(int j_=0;j_<parts;j_++){ // partes de máquinas no en la celda
+	for(int j_=0;j_<parts;j_++){ // índice de partes de máquina (i) no en la celda (k)
 
-		int j = parts_machines_storage[i*parts+j_]; // parte de máquina no en celda
+		int j = parts_machines_storage[i*n_parts+j_]; // parte (j) de máquina (i) no en celda (k)
 
-		for(int i_in=0;i_in<machines_in;i_in++){
+		for(int i_in=0;i_in<machines_in;i_in++){ // índice de máquinas (i_in) en celda (k) 
 
-			int i_ = machines_in_cells_storage[k*machines_in+i_in]; // máquina en celda
-
+			int i_ = machines_in_cells_storage[k*n_machines+i_in]; // índice de la matriz de incidencia  máquina (i_in) en celda (k) 
+			
 			// costo+ si la máquina en celda tiene la parte que también es de la máquina no en celda
 			cost += incidence_matrix_storage[i_*n_parts+j];
 		}
@@ -130,9 +129,10 @@ __kernel void penalization_Mmax(
 	int n_parts = params->n_parts;
 	
 	int difference = machines_in_cell - params->max_machines_cell;
-	int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
+	//int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
 	
-	unsigned int cost = difference * n_parts * sign;
+	//unsigned int cost = difference * n_parts * sign;
+	unsigned int cost = difference * n_parts * (difference > 0); // costo+ por cada máquina en celda mayor que el máximo especificado
 	
 	atom_add (cost_out,cost);
 }
