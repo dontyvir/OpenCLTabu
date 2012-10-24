@@ -235,12 +235,6 @@ int ParallelSolver::OpenCL_init() {
         exit(SDK_FAILURE);
     }
 
-    kernel_pen = cl::Kernel(program, "penalization", &err);
-    if (err != CL_SUCCESS) {
-        std::cout << "Kernel::Kernel() failed (" << err << ")\n";
-        exit(SDK_FAILURE);
-    }
-
     kernel_pen_Mmax = cl::Kernel(program, "penalization_Mmax", &err);
     if (err != CL_SUCCESS) {
         std::cout << "Kernel::Kernel() failed (" << err << ")\n";
@@ -604,7 +598,8 @@ long ParallelSolver::get_cost(Solution* solution) {
     delete var_machines_in_cells;
 
     // set kernel args
-    // kernel costo
+
+    // kernel cost
     status = kernel_cost.setArg(0, sizeof(cl_uint*),&buf_out_cost);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_out_cost)");
 
@@ -623,32 +618,13 @@ long ParallelSolver::get_cost(Solution* solution) {
     status = kernel_cost.setArg(5, sizeof(cl_int*),&buf_machines_in_cells_lengths);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_in_cells_lengths)");
 
-    // kernel penalizacion
-    status = kernel_pen.setArg(0, sizeof(cl_uint*),&buf_out_cost);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_out_cost)");
-
-    status = kernel_pen.setArg(1, sizeof(ClParams*), &buf_cl_params);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_cl_params)");
-
-    status = kernel_pen.setArg(2, sizeof(cl_int *),&buf_parts_machines_storage);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_parts_machines_storage)");
-
-    status = kernel_pen.setArg(3, sizeof(cl_int*),&buf_parts_machines_lengths);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_parts_machines_lengths)");
-
-    status = kernel_pen.setArg(4, sizeof(cl_int*),&buf_machines_in_cells_storage);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_in_cells_storage)");
-
-    status = kernel_pen.setArg(5, sizeof(cl_int*),&buf_machines_in_cells_lengths);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_in_cells_lengths)");
-
-    status = kernel_pen.setArg(6, sizeof(cl_int*),&buf_machines_not_in_cells_storage);
+    status = kernel_cost.setArg(6, sizeof(cl_int*),&buf_machines_not_in_cells_storage);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_not_in_cells_storage)");
 
-    status = kernel_pen.setArg(7, sizeof(cl_int*),&buf_machines_not_in_cells_lengths);
+    status = kernel_cost.setArg(7, sizeof(cl_int*),&buf_machines_not_in_cells_lengths);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_not_in_cells_lengths)");
 
-    status = kernel_pen.setArg(8, sizeof(cl_int*),&buf_incidence_matrix_storage);
+    status = kernel_cost.setArg(8, sizeof(cl_int*),&buf_incidence_matrix_storage);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_incidence_matrix_storage)");
 
 
@@ -662,15 +638,13 @@ long ParallelSolver::get_cost(Solution* solution) {
     status = kernel_pen_Mmax.setArg(2, sizeof(cl_int*),&buf_machines_in_cells_lengths);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_in_cells_lengths)");
 
+    cl::NDRange globalThreads_pen(n_machines, n_parts, n_cells );
 
-    cl::NDRange globalThreads_cost(n_machines, n_parts, n_cells );
-
-    cl::NDRange globalThreads_pen(n_machines, n_cells );
+    cl::NDRange globalThreads_cost(n_machines, n_cells );
     //cl::NDRange globalThreads_pen(1, 1 );
     cl::NDRange globalThreads_pen_Mmax(n_cells );
     cl::Event ndrEvt;
     cl::Event kernel_costos_evt;
-    cl::Event kernel_pen_evt;
     cl::Event kernel_penMmax_evt;
 
     // Running CL program
@@ -678,17 +652,6 @@ long ParallelSolver::get_cost(Solution* solution) {
     // kernel de costos ---------------------------------
     err = queue.enqueueNDRangeKernel(
     		kernel_cost,cl::NullRange, globalThreads_cost, cl::NullRange, 0, &kernel_costos_evt
-    );
-
-    if (err != CL_SUCCESS) {
-        std::cout << "CommandQueue::enqueueNDRangeKernel()" \
-            " failed (" << err << ")\n";
-       return SDK_FAILURE;
-    }
-
-    // kernel penalización -------------------------------
-    err = queue.enqueueNDRangeKernel(
-    		kernel_pen,cl::NullRange, globalThreads_pen, cl::NullRange, 0, &kernel_pen_evt
     );
 
     if (err != CL_SUCCESS) {
@@ -724,15 +687,6 @@ long ParallelSolver::get_cost(Solution* solution) {
      eventStatus = CL_QUEUED;
      while(eventStatus != CL_COMPLETE)
      {
-         status = kernel_pen_evt.getInfo<cl_int>(
-                     CL_EVENT_COMMAND_EXECUTION_STATUS,
-                     &eventStatus);
-         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
-     }
-
-     eventStatus = CL_QUEUED;
-     while(eventStatus != CL_COMPLETE)
-     {
          status = kernel_penMmax_evt.getInfo<cl_int>(
                      CL_EVENT_COMMAND_EXECUTION_STATUS,
                      &eventStatus);
@@ -743,7 +697,6 @@ long ParallelSolver::get_cost(Solution* solution) {
 
      std::vector<cl::Event> events;
      events.push_back(kernel_costos_evt);
-     events.push_back(kernel_pen_evt);
      events.push_back(kernel_penMmax_evt);
 
      cl::WaitForEvents(events);
@@ -758,13 +711,6 @@ long ParallelSolver::get_cost(Solution* solution) {
 
      total_time = time_end - time_start;
 
-     status = kernel_pen_evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_start);
-     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_START");
-     status = kernel_pen_evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_end);
-     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_END");
-
-     total_time += time_end - time_start;
-
      status = kernel_penMmax_evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_start);
      CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_START");
      status = kernel_penMmax_evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_end);
@@ -776,7 +722,6 @@ long ParallelSolver::get_cost(Solution* solution) {
 
      // --------------------------------------------------------------------------
 
-     //std::cout << "enqueue read buffer" << std::endl;
      // Enqueue readBuffer
      cl::Event readEvt;
      status = queue.enqueueReadBuffer(

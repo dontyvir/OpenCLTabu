@@ -111,11 +111,17 @@ int main(int argc, char* argv[]) {
 		sol = solver->solve();
 	}
 
-
-
-// ----------------------------------------------------------------------------------
+// ----------------------resultados globales -------------------------------------------
 
 	std::cout << "\n----- global results ------" << std::endl;
+
+	std::cout << "Costo : " << solver->get_costo_real(sol) << std::endl;
+
+	std::string factible = "NO";
+	if(solver->es_factible(sol))
+		factible = "SI";
+
+	std::cout << "Es factible : " << factible << std::endl;
 
 	for (int i = 0; i < machines; i++)
 		std::cout << sol->cell_vector[i] << " ";
@@ -175,6 +181,8 @@ int main(int argc, char* argv[]) {
 	for (int i = 0; i < machines; i++) {
 
 		std::cout << i << " ";
+		if(i < 10)
+			std::cout << " ";
 
 		for (int j = 0; j < parts; j++) {
 			int item = solver->incidence_matrix->getMatrix()[i][j];
@@ -197,6 +205,8 @@ int main(int argc, char* argv[]) {
 	for (int i = 0; i < machines; i++) {
 
 		std::cout << rows[i] << "(k" << sol->cell_vector[rows[i]] << ") ";
+		if(rows[i] < 10)
+			std::cout << " ";
 
 		for (int j = 0; j < parts; j++) {
 			int item =

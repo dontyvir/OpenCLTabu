@@ -9,67 +9,63 @@ typedef struct cl_params {
 	int max_machines_cell;
 } ClParams;
 
-inline int equal(int a,int b){
 
-	int equal = a - b;
-
-	equal = ((equal | (~equal + 1)) >> 31) & 0;
-
-	return equal;
-}
-
-inline int zero(int a){
-
-	int zero = ((a | (~a + 1)) >> 31) & 0;
-	return zero;
-}
-
-/**
- * costo base 
- * 
- */
 __kernel void cost(
 		__global unsigned int *cost_out,
 		__global ClParams *params,
 		__global int *parts_machines_storage,
 		__global int *parts_machines_lengths,
 		__global int *machines_in_cells_storage,
-		__global int *machines_in_cells_lengths
+		__global int *machines_in_cells_lengths,
+		__global int *machines_not_in_cells_storage,
+		__global int *machines_not_in_cells_lengths,
+		__global int *incidence_matrix_storage,
+		__global int *parts_cells
 ){
+
+	uint j = get_global_id(0); //parte
+	parts_cells[j] = -1;
 	
-    uint i_in = get_global_id(0);
-    uint j = get_global_id(1);
-    uint k = get_global_id(2);
+	uint k = get_global_id(1); // celda
+	int machines_in = machines_in_cells[k].size();
 	
-	int machines_in = machines_in_cells_lengths[k];
-	if(!(i_in < machines_in)){
+	uint i_in = get_global_id(2);//índice máquina en celda
+	if(!(i_in < machines_in))
 		return;
-	}
 	
-	int n_parts = params->n_parts;
-	int n_machines = params->n_machines;
-	int in_cells = 0;
+	int i_ = machines_in_cells_storage[k*n_machines+i_in]; // máquina en celda
 	
-	int i_ = machines_in_cells_storage[k*n_machines+i_in]; // índice matriz incidencia (i_) máquina (i_in) en celda (k)
-	int parts = parts_machines_lengths[i_]; // número de partes para la máquina (i_)
-
-	for(int j_in=0;j_in<parts;j_in++){ // índice j_in de partes de máquina (i_) en la celda (k)
-
-		int j_ = parts_machines_storage[i_*n_parts+j_in]; // índice matriz incidencia (j_) de parte parte de máquina (i_) en celda (k)
-
-		in_cells += (j==(unsigned)j_); // si la parte j se encuentra en la celda k
+	if(incidence_matrix_storage[i_*n_parts+j]!=1)
+		return;
+	
+	// parte j en celda k
+	
+	if(parts_cells[j]!=-1)
+		return;
+	
+	parts_cells[j] = k;
+	
+	int machines_not_in = machines_not_in_cells_lengths[k];
+	
+	for(int i_n=0;i_n<machines_not_in;i_n++){ // máquinas no en celda
+	
+		int i = machines_not_in_cells[k][i_n]; // máquina no en celda
+	
+		// elemento excepcional (parte celda k también en otra celda)						
+		cost += incidence_matrix_storage[i*n_parts+j];
 	}
 
-	// cost+=n_parts*in_cells para in_cells != 1
-    unsigned int cost = (in_cells - 1) * n_parts * (in_cells > 0); // costo+ si la parte se encuentra en más de una celda
-    atom_add (cost_out,cost);
+	atom_add (cost_out,cost);
 }
 
+
 /**
- * penalizaciones 
+ * costo base
  * 
  */
-__kernel void penalization(
+
+/*
+__kernel void cost(
 		__global unsigned int *cost_out,
 		__global ClParams *params,
 		__global int *parts_machines_storage,
@@ -113,7 +109,7 @@ __kernel void penalization(
 
 	atom_add (cost_out,cost);
 }
-
+*/
 /**
  * penalizaciones por número de máquinas en celda mayor a máximo
  * 
@@ -129,10 +125,8 @@ __kernel void penalization_Mmax(
 	int n_parts = params->n_parts;
 	
 	int difference = machines_in_cell - params->max_machines_cell;
-	//int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
-	
-	//unsigned int cost = difference * n_parts * sign;
-	unsigned int cost = difference * n_parts * (difference > 0); // costo+ por cada máquina en celda mayor que el máximo especificado
+
+	unsigned int cost = (difference+n_parts) * (difference > 0); // costo+ por cada máquina en celda mayor que el máximo especificado
 	
 	atom_add (cost_out,cost);
 }

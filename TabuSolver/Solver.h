@@ -28,6 +28,8 @@ public:
 			int tabu_turns);
 	virtual ~Solver();
 	void set_incidence_matrix(Matrix *incidence_matrix);
+	bool es_factible(Solution *solution);
+	int get_costo_real(Solution *solution);
 	Solution *solve();
 	Matrix *incidence_matrix;
 	Solution *current_solution;
