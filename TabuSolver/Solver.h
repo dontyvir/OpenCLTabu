@@ -35,6 +35,7 @@ public:
 	Solution *current_solution;
 	Solution *global_best;
 	int global_best_cost;
+	std::string file_out;
 
 protected:
 	TabuList *tabu_list;

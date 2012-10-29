@@ -26,6 +26,7 @@ int main(int argc, char* argv[]) {
 	int max_machines_cell;
 	int tabu_turns;
 	std::string filename = "";
+	std::string file_out = "";
 	opterr = 0;
 	int c;
 	bool parallel_cost = false;
@@ -35,7 +36,7 @@ int main(int argc, char* argv[]) {
 		return EXIT_SUCCESS;
 	}
 
-	while ((c = getopt(argc, argv, "i:d:m:p:c:M:t:f:P")) != -1){
+	while ((c = getopt(argc, argv, "i:d:m:p:c:M:t:f:PO:")) != -1){
 		switch (c) {
 		case 'i':
 
@@ -61,12 +62,16 @@ int main(int argc, char* argv[]) {
 
 			filename.assign(optarg, strlen(optarg));
 			break;
+		case 'O':
+
+			file_out.assign(optarg, strlen(optarg));
+			break;
 		case 'P':
 
 			parallel_cost = true;
 			break;
 		case '?':
-			if (optopt == 'c')
+			if (optopt == 'O')
 				fprintf(stderr, "Option -%c requires an argument.\n", optopt);
 			else if (isprint(optopt))
 				fprintf(stderr, "Unknown option `-%c'.\n", optopt);
@@ -74,7 +79,7 @@ int main(int argc, char* argv[]) {
 				fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
 			return 1;
 		default:
-			std::cout << "argumentos : -i <numero iteraciones> -d <param diversificacion> -c <celdas> -m <máquinas max por celda> -t <turnos tabu>\n";
+			std::cout << "argumentos : -i <numero iteraciones> -d <param diversificacion> -c <celdas> -m <máquinas max por celda> -t <turnos tabu> -O <archivo salida>\n";
 			abort();
 			break;
 		}
@@ -103,13 +108,16 @@ int main(int argc, char* argv[]) {
 		solver = new tabu::ParallelSolver(iterations, diversification_param,
 				machines, parts, cells, max_machines_cell, mat,
 				tabu_turns);
+		solver->file_out = file_out;
 		sol = solver->solve();
 	} else {
 		solver = new tabu::Solver(iterations, diversification_param,
 				machines, parts, cells, max_machines_cell, mat,
 				tabu_turns);
+		solver->file_out = file_out;
 		sol = solver->solve();
 	}
+
 
 // ----------------------resultados globales -------------------------------------------
 

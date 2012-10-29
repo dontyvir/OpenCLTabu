@@ -258,7 +258,7 @@ void Solver::global_search() {
 
 Solution *Solver::solve(){
 
-	std::ofstream out_file ("out.txt");
+	std::ofstream out_file (file_out.c_str());
 	if (!out_file.is_open()) {
 		std::cout << "Unable to open file";
 	}

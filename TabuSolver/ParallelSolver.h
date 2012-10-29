@@ -78,6 +78,8 @@ private:
     cl::Buffer buf_machines_not_in_cells_lengths;
 
     cl::Buffer buf_incidence_matrix_storage;
+
+    cl::Buffer buf_parts_cells;
 };
 
 } /* namespace tabu */
