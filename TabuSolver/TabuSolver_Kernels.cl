@@ -9,6 +9,57 @@ typedef struct cl_params {
 	int max_machines_cell;
 } ClParams;
 
+//--------------------------------------------------------------------------------------
+__kernel void cost_2(
+		__global unsigned int *cost_out,
+		__global ClParams *params,
+		__global int *incidence_matrix,
+		__global int *solution
+){
+	
+	long cost = 0;
+
+	uint i = get_global_id(0);// sum i=1...M
+	uint j = get_globa_id(1);// sum j=1...P
+	uint k = get_global_id(2); // sum k=1...C
+					
+	//(z_jk)
+	for(unsigned int i_=0;i_<n_machines;i_++){
+				
+		cost += (
+					(incidence_matrix[i*n_parts+j] == 1)
+					* (solution[i] != (signed int)k)
+					* (i != i_)
+					* (solution[i_] == (signed int)k)
+					* (incidence_matrix->getMatrix()[i_*n_parts+j] == 1);
+				)
+	}
+	
+	atom_add (cost_out,cost);
+}
+
+__kernel void penalization_Mmax_2(
+		__global unsigned int *cost_out,
+		__global ClParams *params,
+		__global int *machines_in_cells_lengths){
+	
+    uint k = get_global_id(0);
+
+	int machines_cell = 0;
+	for(unsigned int i=0;i<n_machines;i++){
+		if(solution->cell_vector[i] == (signed int)k){
+			machines_cell++;
+		}
+	}
+	// y_ik <= Mmax
+	if((unsigned int)machines_cell > max_machines_cell){
+		cost += (machines_cell - max_machines_cell) * n_parts;
+	}
+    
+}
+
+//--------------------------------------------------------------------------------------
+
 
 __kernel void cost(
 		__global unsigned int *cost_out,
@@ -55,7 +106,7 @@ __kernel void cost(
 	for(int i_n=0;i_n<machines_not_in;i_n++){ // máquinas no en celda
 	
 		int i = machines_not_in_cells_storage[k*n_machines+i_n]; // máquina no en celda
-
+		
 		// elemento excepcional (parte celda k también en otra celda)						
 		cost += incidence_matrix_storage[i*n_parts+j];
 	}

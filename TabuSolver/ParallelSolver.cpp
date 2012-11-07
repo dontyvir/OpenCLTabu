@@ -276,7 +276,7 @@ int ParallelSolver::OpenCL_init() {
     					NULL, &err);
 
     cl_int status;
-    cl::Event writeEvt;
+    cl::Event writeEvt1,writeEvt2,writeEvt3,writeEvt4,writeEvt5;
 
     cl_uint cost = 0;
     status = queue.enqueueWriteBuffer(
@@ -286,7 +286,7 @@ int ParallelSolver::OpenCL_init() {
     		sizeof(cl_uint),
     		(void *)&cost,
     		NULL,
-    		&writeEvt);
+    		&writeEvt1);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_out_cost)");
 
@@ -303,7 +303,7 @@ int ParallelSolver::OpenCL_init() {
     		sizeof(ClParams),
     		(void *)params,
     		NULL,
-    		&writeEvt);
+    		&writeEvt2);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_max_machines_cell)");
 
@@ -317,7 +317,7 @@ int ParallelSolver::OpenCL_init() {
     		sizeof(int)*n_parts*n_machines,
     		(void *)(var_parts_machines->storage),
     		NULL,
-    		&writeEvt);
+    		&writeEvt3);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_parts_machines_storage)");
     status = queue.enqueueWriteBuffer(
@@ -327,7 +327,7 @@ int ParallelSolver::OpenCL_init() {
     		sizeof(int)*n_machines,
     		(void *)(var_parts_machines->cols),
     		NULL,
-    		&writeEvt);
+    		&writeEvt4);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_parts_machines_storage)");
 
@@ -341,7 +341,7 @@ int ParallelSolver::OpenCL_init() {
     		sizeof(int)*n_parts*n_machines,
     		(void *)(static_incidence->storage),
     		NULL,
-    		&writeEvt);
+    		&writeEvt5);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_incidence_matrix_storage)");
 
@@ -349,15 +349,14 @@ int ParallelSolver::OpenCL_init() {
     CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
     //std::cout << "flush" << std::endl;
 
-    cl_int eventStatus = CL_QUEUED;
+    std::vector<cl::Event> events_write;
+    events_write.push_back(writeEvt1);
+    events_write.push_back(writeEvt2);
+    events_write.push_back(writeEvt3);
+    events_write.push_back(writeEvt4);
+    events_write.push_back(writeEvt5);
 
-    while(eventStatus != CL_COMPLETE)
-    {
-        status = writeEvt.getInfo<cl_int>(
-                    CL_EVENT_COMMAND_EXECUTION_STATUS,
-                    &eventStatus);
-        CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
-    }
+    cl::WaitForEvents(events_write);
 
 
     //std::cout << "delete" << std::endl;
@@ -518,9 +517,8 @@ long ParallelSolver::get_cost(Solution* solution) {
     /////////////////////////runCLKernels////////////////////////////////////////
 
     cl_int status;
-    cl_int eventStatus = CL_QUEUED;
 
-    cl::Event writeEvt;
+    cl::Event writeEvt1,writeEvt2,writeEvt3,writeEvt4,writeEvt5,writeEvt6;
 
     //std::cout << "machines_in_cells" << std::endl;
     VariableMatrix *var_machines_in_cells = vector_to_var_mat(machines_in_cells,n_machines);
@@ -531,7 +529,7 @@ long ParallelSolver::get_cost(Solution* solution) {
     		sizeof(int)*n_cells*n_machines,
     		(void *)(var_machines_in_cells->storage),
     		NULL,
-    		&writeEvt);
+    		&writeEvt1);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_in_cells)");
     status = queue.enqueueWriteBuffer(
@@ -541,7 +539,7 @@ long ParallelSolver::get_cost(Solution* solution) {
     		sizeof(int)*n_cells,
     		(void *)(var_machines_in_cells->cols),
     		NULL,
-    		&writeEvt);
+    		&writeEvt2);
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_in_cells)");
 
     VariableMatrix *var_machines_not_in_cells = vector_to_var_mat(machines_not_in_cells,n_machines);
@@ -553,7 +551,7 @@ long ParallelSolver::get_cost(Solution* solution) {
     		sizeof(cl_int)*n_cells*n_machines,
     		(void *)(var_machines_not_in_cells->storage),
     		NULL,
-    		&writeEvt);
+    		&writeEvt3);
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_not_in_cells)");
 
     status = queue.enqueueWriteBuffer(
@@ -563,7 +561,7 @@ long ParallelSolver::get_cost(Solution* solution) {
     		sizeof(cl_int)*n_cells,
     		(void *)(var_machines_not_in_cells->cols),
     		NULL,
-    		&writeEvt);
+    		&writeEvt4);
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_machines_not_in_cells)");
 
     status = queue.enqueueWriteBuffer(
@@ -573,7 +571,7 @@ long ParallelSolver::get_cost(Solution* solution) {
     		sizeof(cl_uint),
     		(void *)&cost,
     		NULL,
-    		&writeEvt);
+    		&writeEvt5);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_out_cost)");
 
@@ -584,30 +582,12 @@ long ParallelSolver::get_cost(Solution* solution) {
     		sizeof(cl_uint)*n_parts,
     		(void *)parts_cells,
     		NULL,
-    		&writeEvt);
+    		&writeEvt6);
 
     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_out_cost)");
 
     status = queue.flush();
     CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
-
-    eventStatus = CL_QUEUED;
-    while(eventStatus != CL_COMPLETE)
-    {
-        status = writeEvt.getInfo<cl_int>(
-                    CL_EVENT_COMMAND_EXECUTION_STATUS,
-                    &eventStatus);
-        CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
-    }
-
-    //std::cout << "delete" << std::endl;
-    delete[] var_machines_not_in_cells->storage;
-    delete[] var_machines_not_in_cells->cols;
-    delete var_machines_not_in_cells;
-
-    delete[] var_machines_in_cells->storage;
-    delete[] var_machines_in_cells->cols;
-    delete var_machines_in_cells;
 
     // set kernel args
 
@@ -662,6 +642,21 @@ long ParallelSolver::get_cost(Solution* solution) {
 
     // Running CL program
 
+    // esperar  eventos de grabado ----------------------------------------------
+
+    std::vector<cl::Event> events_write;
+    events_write.push_back(writeEvt1);
+    events_write.push_back(writeEvt2);
+    events_write.push_back(writeEvt3);
+    events_write.push_back(writeEvt4);
+    events_write.push_back(writeEvt5);
+    events_write.push_back(writeEvt6);
+
+    cl::WaitForEvents(events_write);
+
+    // fin esperar  eventos de grabado ----------------------------------------------
+
+
     // kernel de costos ---------------------------------
     err = queue.enqueueNDRangeKernel(
     		kernel_cost,cl::NullRange, globalThreads_cost, cl::NullRange, 0, &kernel_costos_evt
@@ -687,24 +682,6 @@ long ParallelSolver::get_cost(Solution* solution) {
     //std::cout << "flush kernel completion" << std::endl;
     status = queue.flush();
      CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
-
-     eventStatus = CL_QUEUED;
-     while(eventStatus != CL_COMPLETE)
-     {
-         status = kernel_costos_evt.getInfo<cl_int>(
-                     CL_EVENT_COMMAND_EXECUTION_STATUS,
-                     &eventStatus);
-         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
-     }
-
-     eventStatus = CL_QUEUED;
-     while(eventStatus != CL_COMPLETE)
-     {
-         status = kernel_penMmax_evt.getInfo<cl_int>(
-                     CL_EVENT_COMMAND_EXECUTION_STATUS,
-                     &eventStatus);
-         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
-     }
 
      // kernel time ------------------------------------------------------
 
@@ -736,7 +713,7 @@ long ParallelSolver::get_cost(Solution* solution) {
      // --------------------------------------------------------------------------
 
      // Enqueue readBuffer
-     cl::Event readEvt;
+     cl::Event readEvt1,readEvt2;
      status = queue.enqueueReadBuffer(
     		 	 buf_out_cost,
                  CL_FALSE,
@@ -744,7 +721,7 @@ long ParallelSolver::get_cost(Solution* solution) {
                  sizeof(cl_uint),
                  (void *)&cost,
                  NULL,
-                 &readEvt);
+                 &readEvt1);
      CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueReadBuffer failed. (buf_out_cost)");
 
      status = queue.enqueueReadBuffer(
@@ -754,25 +731,31 @@ long ParallelSolver::get_cost(Solution* solution) {
                  sizeof(cl_uint)*n_parts,
                  (void *)parts_cells,
                  NULL,
-                 &readEvt);
+                 &readEvt2);
      CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueReadBuffer failed. (outputImageBuffer)");
 
      status = queue.flush();
      CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
 
-     eventStatus = CL_QUEUED;
-     while(eventStatus != CL_COMPLETE)
-     {
-         status = readEvt.getInfo<cl_int>(
-                     CL_EVENT_COMMAND_EXECUTION_STATUS,
-                     &eventStatus);
-         CHECK_OPENCL_ERROR(status, "cl:Event.getInfo(CL_EVENT_COMMAND_EXECUTION_STATUS) failed.");
-     }
+     std::vector<cl::Event> events_read;
+     events_read.push_back(readEvt1);
+     events_read.push_back(readEvt2);
+
+     cl::WaitForEvents(events_read);
 
 //    long cpu_cost = get_cpu_cost(solution);
 //    std::cout << "cpu_cost: " << cpu_cost << " cost: " << cost << std::endl;
 
+    delete[] var_machines_not_in_cells->storage;
+    delete[] var_machines_not_in_cells->cols;
+    delete var_machines_not_in_cells;
+
+    delete[] var_machines_in_cells->storage;
+    delete[] var_machines_in_cells->cols;
+    delete var_machines_in_cells;
+
  	delete[] parts_cells;
+
 
     return (long)cost;
 }
