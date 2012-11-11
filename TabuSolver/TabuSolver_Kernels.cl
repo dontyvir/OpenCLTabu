@@ -3,26 +3,61 @@
 
 typedef struct cl_params {
 
-	int n_cells;
-	int n_parts;
-	int n_machines;
-	int max_machines_cell;
+	const int n_cells;
+	const int n_parts;
+	const int n_machines;
+	const int max_machines_cell;
 } ClParams;
 
-//--------------------------------------------------------------------------------------
-__kernel void cost_2(
-		__global unsigned int *cost_out,
-		__global ClParams *params,
-		__global int *incidence_matrix,
-		__global int *solution
+
+__kernel void local_search(
+		__constant ClParams *params,
+		__constant int *solution,
+		__local int *lsol, // sizeof(int)*n_machines*work_group_size
+		__global int *gsol // sizeof(int)*n_machines*n_machines
 ){
+
+	uint i = get_global_id(0);// n_machines
+	uint j = get_global_id(1);// n_machines
+
+	int n_machines = params->n_machines;
 	
+	__local int *lsol_item = lsol+(n_machines*get_local_id(0));
+	
+	// copiar a memoria local
+	event_t copy_evt;
+	copy_evt = async_work_group_copy(lsol_item, solution, n_machines, copy_evt);
+	wait_group_events(1, &copy_evt);
+
+	// intercambio
+	int tmp = lsol_item[j];
+	lsol_item[j] = lsol_item[i];
+	lsol_item[i] = tmp;
+	
+	//subir a memoria global
+	copy_evt = async_work_group_copy(gsol+((n_machines*i)+j), lsol_item, n_machines, copy_evt);
+	wait_group_events(1, &copy_evt);	
+	
+}
+
+
+__kernel void costs(
+		__global unsigned int *cost_out,
+		__const ClParams *params,
+		__const int *incidence_matrix,
+		__global int *gsol
+){
 	long cost = 0;
 
 	uint i = get_global_id(0);// sum i=1...M
-	uint j = get_globa_id(1);// sum j=1...P
+	uint j = get_global_id(1);// sum j=1...P
 	uint k = get_global_id(2); // sum k=1...C
-					
+
+	__global int *solution = gsol+(n_machines*i+j);
+	
+	int n_machines = params->n_machines;
+	int n_parts = params->n_parts;
+	
 	//(z_jk)
 	for(unsigned int i_=0;i_<n_machines;i_++){
 				
@@ -31,37 +66,72 @@ __kernel void cost_2(
 					* (solution[i] != (signed int)k)
 					* (i != i_)
 					* (solution[i_] == (signed int)k)
-					* (incidence_matrix->getMatrix()[i_*n_parts+j] == 1);
-				)
+					* (incidence_matrix[i_*n_parts+j] == 1)
+				);
 	}
 	
 	atom_add (cost_out,cost);
 }
 
-__kernel void penalization_Mmax_2(
+//--------------------------------------------------------------------------------------
+__kernel void cost(
 		__global unsigned int *cost_out,
-		__global ClParams *params,
-		__global int *machines_in_cells_lengths){
+		__constant ClParams *params,
+		__constant int *incidence_matrix,
+		__constant int *solution
+){
+	
+	long cost = 0;
+
+	uint i = get_global_id(0);// sum i=1...M
+	uint j = get_global_id(1);// sum j=1...P
+	uint k = get_global_id(2); // sum k=1...C
+
+	int n_machines = params->n_machines;
+	int n_parts = params->n_parts;
+	
+	//(z_jk)
+	for(unsigned int i_=0;i_<n_machines;i_++){
+				
+		cost += (
+					(incidence_matrix[i*n_parts+j] == 1)
+					* (solution[i] != (signed int)k)
+					* (i != i_)
+					* (solution[i_] == (signed int)k)
+					* (incidence_matrix[i_*n_parts+j] == 1)
+				);
+	}
+	
+	atom_add (cost_out,cost);
+}
+
+__kernel void penalization_Mmax(
+		__global unsigned int *cost_out,
+		__constant ClParams *params,
+		__constant int *solution){
 	
     uint k = get_global_id(0);
 
+	long cost = 0;
+    
+	int n_machines = params->n_machines;
+	int n_parts = params->n_parts;
+    int max_machines_cell = params->max_machines_cell;
+	
 	int machines_cell = 0;
 	for(unsigned int i=0;i<n_machines;i++){
-		if(solution->cell_vector[i] == (signed int)k){
-			machines_cell++;
-		}
+		machines_cell+=(solution[i] == (signed int)k);
 	}
 	// y_ik <= Mmax
-	if((unsigned int)machines_cell > max_machines_cell){
-		cost += (machines_cell - max_machines_cell) * n_parts;
-	}
+	cost += ( (machines_cell - max_machines_cell) * n_parts ) * ((unsigned int)machines_cell > max_machines_cell);
     
+	atom_add (cost_out,cost);
 }
 
 //--------------------------------------------------------------------------------------
 
 
-__kernel void cost(
+__kernel void cost_(
 		__global unsigned int *cost_out,
 		__global ClParams *params,
 		__global int *parts_machines_storage,
@@ -118,7 +188,7 @@ __kernel void cost(
  * penalizaciones por número de máquinas en celda mayor a máximo
  * 
  */
-__kernel void penalization_Mmax(
+__kernel void penalization_Mmax_(
 		__global unsigned int *cost_out,
 		__global ClParams *params,
 		__global int *machines_in_cells_lengths){

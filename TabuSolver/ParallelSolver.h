@@ -67,19 +67,8 @@ private:
 
 	cl::Buffer buf_out_cost;
     cl::Buffer buf_cl_params;
-
-    cl::Buffer buf_parts_machines_storage;
-    cl::Buffer buf_parts_machines_lengths;
-
-    cl::Buffer buf_machines_in_cells_storage;
-    cl::Buffer buf_machines_in_cells_lengths;
-
-    cl::Buffer buf_machines_not_in_cells_storage;
-    cl::Buffer buf_machines_not_in_cells_lengths;
-
-    cl::Buffer buf_incidence_matrix_storage;
-
-    cl::Buffer buf_parts_cells;
+    cl::Buffer buf_incidence_matrix;
+    cl::Buffer buf_sol;
 };
 
 } /* namespace tabu */
