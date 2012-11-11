@@ -3,16 +3,16 @@
 
 typedef struct cl_params {
 
-	const int n_cells;
-	const int n_parts;
-	const int n_machines;
-	const int max_machines_cell;
+	int n_cells;
+	int n_parts;
+	int n_machines;
+	int max_machines_cell;
 } ClParams;
 
 
 __kernel void local_search(
 		__constant ClParams *params,
-		__constant int *solution,
+		__global int *solution,
 		__local int *lsol, // sizeof(int)*n_machines*work_group_size
 		__global int *gsol // sizeof(int)*n_machines*n_machines
 ){
@@ -25,7 +25,7 @@ __kernel void local_search(
 	__local int *lsol_item = lsol+(n_machines*get_local_id(0));
 	
 	// copiar a memoria local
-	event_t copy_evt;
+	event_t copy_evt = 0;
 	copy_evt = async_work_group_copy(lsol_item, solution, n_machines, copy_evt);
 	wait_group_events(1, &copy_evt);
 
@@ -43,8 +43,8 @@ __kernel void local_search(
 
 __kernel void costs(
 		__global unsigned int *cost_out,
-		__const ClParams *params,
-		__const int *incidence_matrix,
+		__constant ClParams *params,
+		__constant int *incidence_matrix,
 		__global int *gsol
 ){
 	long cost = 0;
@@ -53,11 +53,11 @@ __kernel void costs(
 	uint j = get_global_id(1);// sum j=1...P
 	uint k = get_global_id(2); // sum k=1...C
 
-	__global int *solution = gsol+(n_machines*i+j);
-	
 	int n_machines = params->n_machines;
 	int n_parts = params->n_parts;
 	
+	__global int *solution = gsol+(n_machines*i+j);
+		
 	//(z_jk)
 	for(unsigned int i_=0;i_<n_machines;i_++){
 				
