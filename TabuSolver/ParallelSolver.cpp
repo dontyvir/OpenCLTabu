@@ -17,10 +17,19 @@ ParallelSolver::ParallelSolver(unsigned int max_iterations,
 		Solver(max_iterations, diversification_param, n_machines, n_parts,
 				n_cells, max_machines_cell, incidence_matrix, tabu_turns) {
 
+	out_cost = NULL;
+	params = NULL;
+	gsol = NULL;
+	min_i = 0;
+	min_cost = UINT_MAX;
+
 }
 
 ParallelSolver::~ParallelSolver() {
 
+	delete params;
+	delete[] gsol;
+	delete[] out_cost;
 }
 
 void print_array(int *array,int size){
@@ -140,6 +149,8 @@ int ParallelSolver::OpenCL_init() {
 
     cl_int err;
 
+    cl_device_type dev_type = CL_DEVICE_TYPE_CPU;
+
     // Platform info
     std::vector<cl::Platform> platforms;
 
@@ -176,7 +187,7 @@ int ParallelSolver::OpenCL_init() {
     cl_context_properties cps[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)(*i)(), 0 };
 
     // Creating a context AMD platform
-    context = cl::Context(CL_DEVICE_TYPE_CPU, cps, NULL, NULL, &err);
+    context = cl::Context(dev_type, cps, NULL, NULL, &err);
     if (err != CL_SUCCESS) {
         std::cout << "Context::Context() failed (" << err << ")\n";
         exit(SDK_FAILURE);
@@ -192,6 +203,32 @@ int ParallelSolver::OpenCL_init() {
         std::cout << "No device available\n";
         exit(SDK_FAILURE);
     }
+
+
+    cl_uint compute_units;
+    size_t global_work_size;
+    size_t local_work_size;
+
+    devices[0].getInfo(CL_DEVICE_MAX_COMPUTE_UNITS,&compute_units);
+
+    if( dev_type == CL_DEVICE_TYPE_CPU )
+    {
+    	global_work_size = compute_units * 1;
+    	local_work_size = 1;
+    }
+    else
+    {
+    	cl_uint ws = 64;
+    	// 1 thread per core
+    	global_work_size = compute_units * 7 * ws; // 7 wavefronts per SIMD
+
+    	while( (n_machines / 4) % global_work_size != 0 )
+    		global_work_size += ws;
+
+    	local_work_size = ws;
+    }
+
+
 
     // Loading and compiling CL source
     streamsdk::SDKFile file;
@@ -225,13 +262,25 @@ int ParallelSolver::OpenCL_init() {
         exit(SDK_FAILURE);
     }
 
-    kernel_cost = cl::Kernel(program, "cost", &err);
+    kernel_local_search = cl::Kernel(program, "local_search", &err);
     if (err != CL_SUCCESS) {
         std::cout << "Kernel::Kernel() failed (" << err << ")\n";
         exit(SDK_FAILURE);
     }
 
-    kernel_pen_Mmax = cl::Kernel(program, "penalization_Mmax", &err);
+    kernel_cost = cl::Kernel(program, "costs", &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "Kernel::Kernel() failed (" << err << ")\n";
+        exit(SDK_FAILURE);
+    }
+
+    kernel_pen_Mmax = cl::Kernel(program, "penalizaciones_Mmax", &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "Kernel::Kernel() failed (" << err << ")\n";
+        exit(SDK_FAILURE);
+    }
+
+    kernel_cost_min = cl::Kernel(program, "mejor_solucion", &err);
     if (err != CL_SUCCESS) {
         std::cout << "Kernel::Kernel() failed (" << err << ")\n";
         exit(SDK_FAILURE);
@@ -246,225 +295,80 @@ int ParallelSolver::OpenCL_init() {
 
     // fixed input buffers
 
-    buf_cl_params = cl::Buffer(context,
-    					CL_MEM_READ_ONLY,
-    					sizeof(ClParams),
-    					NULL,
-    					&err);
-
-    buf_incidence_matrix = cl::Buffer(context,
-    					CL_MEM_READ_ONLY,
-    					sizeof(int)*n_parts*n_machines,
-    					NULL,
-    					&err);
-
-    // out buffer
-    buf_out_cost = cl::Buffer(context,
-    					CL_MEM_WRITE_ONLY,
-    					sizeof(cl_uint),
-    					NULL, &err);
-
-    cl_int status;
-    cl::Event writeEvt1,writeEvt2,writeEvt3,writeEvt4,writeEvt5;
-
-    cl_uint cost = 0;
-    status = queue.enqueueWriteBuffer(
-    		buf_out_cost,
-    		CL_FALSE,
-    		0,
-    		sizeof(cl_uint),
-    		(void *)&cost,
-    		NULL,
-    		&writeEvt1);
-
-    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_out_cost)");
-
-    ClParams *params = new ClParams();
+    params = new ClParams();
     params->max_machines_cell = max_machines_cell;
     params->n_cells = n_cells;
     params->n_machines = n_machines;
     params->n_parts = n_parts;
 
-    status = queue.enqueueWriteBuffer(
-    		buf_cl_params,
-    		CL_FALSE,
-    		0,
-    		sizeof(ClParams),
-    		(void *)params,
-    		NULL,
-    		&writeEvt2);
-
-    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_max_machines_cell)");
-
-	StaticMatrix *static_incidence = matrix_to_StaticMatrix(incidence_matrix);
-
-    status = queue.enqueueWriteBuffer(
-    		buf_incidence_matrix,
-    		CL_FALSE,
-    		0,
-    		sizeof(int)*n_parts*n_machines,
-    		(void *)(static_incidence->storage),
-    		NULL,
-    		&writeEvt5);
-
-    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_incidence_matrix_storage)");
-
-    status = queue.flush();
-    CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
-
-    std::vector<cl::Event> events_write;
-    events_write.push_back(writeEvt1);
-    events_write.push_back(writeEvt2);
-    events_write.push_back(writeEvt5);
-
-    cl::WaitForEvents(events_write);
-
-
-    //std::cout << "delete" << std::endl;
-    delete[] static_incidence->storage;
-    delete static_incidence;
-
-
-    delete params;
-
-    //std::cout << "return" << std::endl;
-    return SDK_SUCCESS;
-
-}
-
-long ParallelSolver::get_cpu_cost(Solution* solution) {
-
-	long cost = 0;
-
-	std::vector<std::vector<int> > machines_in_cells(n_cells,std::vector<int>());
-	std::vector<std::vector<int> > machines_not_in_cells(n_cells,std::vector<int>());
-	for(unsigned int k=0;k<n_cells;k++){
-		for(unsigned int i=0;i<n_machines;i++){
-			if(solution->cell_vector[i] == (signed int)k)
-				machines_in_cells[k].push_back(i);
-			else
-				machines_not_in_cells[k].push_back(i);
-		}
-	}
-
-	for(unsigned int k=0;k<n_cells;k++){ // sum k=1...C // celdas
-
-		//------------penalizacion y_ik <= Mmax------------------
-
-		int machines_cell = machines_in_cells[k].size();
-
-		int difference = machines_cell - max_machines_cell;
-		//int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
-		//cost += difference * n_parts * sign;
-		cost += difference * n_parts * (difference > 0);
-
-		// -------------------------------------------------------
-
-		int machines_not_in = machines_not_in_cells[k].size();
-
-		for(int i_n=0;i_n<machines_not_in;i_n++){ // máquinas no en celda
-
-			int i = machines_not_in_cells[k][i_n]; // máquina no en celda
-			int machines_in = machines_in_cells[k].size();
-			int parts = parts_machines[i].size();
-
-			for(int j_=0;j_<parts;j_++){ // partes de máquinas no en la celda
-
-				int j = parts_machines[i][j_]; // parte de máquina no en celda
-
-				for(int i_in=0;i_in<machines_in;i_in++){
-
-					int i_ = machines_in_cells[k][i_in]; // máquina en celda
-
-					// costo+ si la máquina en celda tiene la parte que también es de la máquina no en celda
-					cost += incidence_matrix->getMatrix()[i_][j];
-				}
-			}
-		}
-	}
-
-	for(unsigned int j=0;j<n_parts;j++){
-
-		int in_cells = 0;
-
-		for(unsigned int k=0;k<n_cells;k++){
-
-			int machines_in = machines_in_cells[k].size();
-
-			for(int i_in=0;i_in<machines_in;i_in++){
-
-				int i_ = machines_in_cells[k][i_in]; // máquina en celda
-				int parts = parts_machines[i_].size();
-
-				for(int j_in=0;j_in<parts;j_in++){ // partes de máquinas en la celda
-
-					int j_ = parts_machines[i_][j_in]; // parte de máquina en celda
-
-					//in_cells += equal(j,j_);
-					in_cells += (j==(unsigned)j_);
-				}
-			}
-		}
-
-		// cost+=n_parts*in_cells para in_cells != 1
-		//cost += (in_cells - 1) * n_parts * (-1*zero(in_cells));
-		cost += (in_cells - 1) * n_parts * (in_cells > 0);
-//		if(in_cells > 0)
-//			std::cout << "in cells " << in_cells << std::endl;
-	}
-
-	return cost;
-}
-
-void ParallelSolver::init() {
-
-	OpenCL_init();
-	Solver::init();
-}
-
-long ParallelSolver::get_cost(Solution* solution) {
-
-	cl_uint cost=0;
-    cl_int err;
-
-    /////////////////////////runCLKernels////////////////////////////////////////
-
-    cl_int status;
-
-    cl::Event writeEvt1,writeEvt2;
-
-    buf_sol = cl::Buffer(context,
-    					CL_MEM_READ_ONLY,
-    					sizeof(cl_int)*n_machines,
-    					NULL,
+    buf_cl_params = cl::Buffer(context,
+    					CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
+    					sizeof(ClParams),
+    					(void *)params,
     					&err);
 
-    status = queue.enqueueWriteBuffer(
-    		buf_sol,
-    		CL_FALSE,
-    		0,
-    		sizeof(cl_uint)*n_machines,
-    		(void *)(solution->cell_vector),
-    		NULL,
-    		&writeEvt1);
+	StaticMatrix *static_incidence = matrix_to_StaticMatrix(incidence_matrix);
+    buf_incidence_matrix = cl::Buffer(context,
+    					CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+    					sizeof(cl_int)*n_parts*n_machines,
+    		    		(void *)(static_incidence->storage),
+    					&err);
 
-    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_sol)");
+    // out buffer
+    out_cost = new cl_uint[n_machines*n_machines];
+    memset(out_cost,0,sizeof(cl_uint)*n_machines*n_machines);
 
-    status = queue.enqueueWriteBuffer(
-    		buf_out_cost,
-    		CL_FALSE,
-    		0,
-    		sizeof(cl_uint),
-    		(void *)&cost,
-    		NULL,
-    		&writeEvt1);
+    buf_out_cost = cl::Buffer(context,
+    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					sizeof(cl_uint)*n_machines*n_machines,
+    					out_cost, &err);
 
-    CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueWriteBuffer() failed. (buf_out_cost)");
+    buf_cur_sol = cl::Buffer(context,
+    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					sizeof(cl_int)*n_machines,
+    					current_solution,
+    					&err);
+
+    gsol = new cl_int[n_machines*n_machines*n_machines];
+    buf_gsol = cl::Buffer(context,
+    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					sizeof(cl_int)*n_machines*n_machines*n_machines,
+    					gsol,
+    					&err);
+
+    buf_min_i = cl::Buffer(context,
+    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					sizeof(cl_uint),
+    					&min_i,
+    					&err);
+
+    buf_min_cost = cl::Buffer(context,
+    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					sizeof(cl_uint),
+    					&min_cost,
+    					&err);
+
+    cl_int status;
 
     status = queue.flush();
     CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
 
     // set kernel args
+
+    // kernel local search
+
+    status = kernel_local_search.setArg(0, sizeof(ClParams*),&buf_cl_params);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_cl_params)");
+
+    status = kernel_local_search.setArg(1, sizeof(cl_uint*),&buf_cur_sol);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_cur_sol)");
+
+    status = kernel_local_search.setArg(2, sizeof(cl_int)*n_machines*local_work_size, NULL);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_lsol)");
+
+    status = kernel_local_search.setArg(3, sizeof(cl_uint*),&buf_gsol);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_gsol)");
+
 
     // kernel cost
     status = kernel_cost.setArg(0, sizeof(cl_uint*),&buf_out_cost);
@@ -476,8 +380,8 @@ long ParallelSolver::get_cost(Solution* solution) {
     status = kernel_cost.setArg(2, sizeof(cl_int*),&buf_incidence_matrix);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_incidence_matrix)");
 
-    status = kernel_cost.setArg(3, sizeof(cl_int*),&buf_sol);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_sol)");
+    status = kernel_cost.setArg(3, sizeof(cl_int*),&buf_gsol);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_gsol)");
 
 
     // kernel penalización Mmax
@@ -487,103 +391,128 @@ long ParallelSolver::get_cost(Solution* solution) {
     status = kernel_pen_Mmax.setArg(1, sizeof(ClParams*), &buf_cl_params);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_cl_params)");
 
-    status = kernel_pen_Mmax.setArg(2, sizeof(cl_int*),&buf_sol);
-    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_sol)");
+    status = kernel_pen_Mmax.setArg(2, sizeof(cl_int*),&buf_gsol);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_gsol)");
 
-    cl::NDRange globalThreads_cost(n_machines, n_parts, n_cells);
-    cl::NDRange globalThreads_pen_Mmax(n_cells);
+    status = kernel_pen_Mmax.setArg(3, sizeof(cl_int*), NULL);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_machines_cell)");
+
+
+    // kernel reducción costo mínimo
+    status = kernel_cost_min.setArg(0, sizeof(cl_uint*),&buf_out_cost);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_out_cost)");
+
+    status = kernel_cost_min.setArg(1, sizeof(cl_int*),&buf_gsol);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_gsol)");
+
+    status = kernel_cost_min.setArg(2, sizeof(cl_uint*), &buf_min_i);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_min_i)");
+
+    status = kernel_cost_min.setArg(3, sizeof(cl_uint*), &buf_min_cost);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_min_cost)");
+
+
+    //std::cout << "delete" << std::endl;
+    delete[] static_incidence->storage;
+    delete static_incidence;
+
+    //std::cout << "return" << std::endl;
+    return SDK_SUCCESS;
+
+}
+
+void ParallelSolver::init() {
+
+	OpenCL_init();
+	Solver::init();
+}
+
+int ParallelSolver::local_search(){
+
+	// moves : vector permutation
+    cl_int err;
+    /////////////////////////runCLKernels////////////////////////////////////////
+
+    cl::Event writeEvt1;
+
+    // llenar buffer gsol
+    for(unsigned int i=0;i<n_machines*n_machines;i++){
+    	memcpy(gsol+(i*n_machines),current_solution->cell_vector,sizeof(int)*n_machines);
+    }
+
+    //reset cost buffer
+    memset(out_cost,0,sizeof(cl_uint)*n_machines*n_machines);
+
+    cl::NDRange globalThreads_local_search(n_machines,n_machines);
+    cl::NDRange globalThreads_cost(n_machines*n_machines*n_machines/4, n_parts, n_machines);
+    cl::NDRange localThreads_cost(4,1,1);
+    cl::NDRange globalThreads_pen_Mmax(n_machines*n_machines,n_cells,4);
+    cl::NDRange localThreads_pen_Mmax(1,1,4);
+    cl::NDRange globalThreads_cost_min(n_machines*n_machines);
     cl::Event ndrEvt;
+    cl::Event kernel_local_search_evt;
     cl::Event kernel_costos_evt;
     cl::Event kernel_penMmax_evt;
-
-    // Running CL program
-
-    // esperar  eventos de grabado ----------------------------------------------
-
-    std::vector<cl::Event> events_write;
-    events_write.push_back(writeEvt1);
-    events_write.push_back(writeEvt2);
-    cl::WaitForEvents(events_write);
-
-    // fin esperar  eventos de grabado ----------------------------------------------
-
+    cl::Event kernel_cost_min_evt;
 
     // kernel de costos ---------------------------------
     err = queue.enqueueNDRangeKernel(
-    		kernel_cost,cl::NullRange, globalThreads_cost, cl::NullRange, 0, &kernel_costos_evt
+    		kernel_local_search,cl::NullRange, globalThreads_local_search, cl::NullRange, NULL, &kernel_local_search_evt
     );
 
-    if (err != CL_SUCCESS) {
-        std::cout << "CommandQueue::enqueueNDRangeKernel()" \
-            " failed (" << err << ")\n";
-       return SDK_FAILURE;
-    }
+    if (err != CL_SUCCESS) { std::cout << "CommandQueue::enqueueNDRangeKernel() failed (" << err << ")\n"; }
 
-    // kernel penalización Mmax ------------------------------
     err = queue.enqueueNDRangeKernel(
-    		kernel_pen_Mmax,cl::NullRange, globalThreads_pen_Mmax, cl::NullRange, 0, &kernel_penMmax_evt
+    		kernel_cost,cl::NullRange, globalThreads_cost, localThreads_cost, 0, &kernel_costos_evt
     );
 
-    if (err != CL_SUCCESS) {
-        std::cout << "CommandQueue::enqueueNDRangeKernel()" \
-            " failed (" << err << ")\n";
-       return SDK_FAILURE;
-    }
+    if (err != CL_SUCCESS) { std::cout << "CommandQueue::enqueueNDRangeKernel() failed (" << err << ")\n"; }
 
-    //std::cout << "flush kernel completion" << std::endl;
-    status = queue.flush();
-     CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
+    err = queue.enqueueNDRangeKernel(
+    		kernel_pen_Mmax,cl::NullRange, globalThreads_pen_Mmax, localThreads_pen_Mmax, 0, &kernel_penMmax_evt
+    );
 
-     // kernel time ------------------------------------------------------
+    if (err != CL_SUCCESS) { std::cout << "CommandQueue::enqueueNDRangeKernel() failed (" << err << ")\n"; }
 
-     std::vector<cl::Event> events;
-     events.push_back(kernel_costos_evt);
-     events.push_back(kernel_penMmax_evt);
+    err = queue.enqueueNDRangeKernel(
+    		kernel_cost_min,cl::NullRange, globalThreads_cost_min, cl::NullRange, 0, &kernel_cost_min_evt
+    );
+
+    if (err != CL_SUCCESS) { std::cout << "CommandQueue::enqueueNDRangeKernel() failed (" << err << ")\n"; }
+
+    queue.flush();
+
+    std::vector<cl::Event> events;
+    events.push_back(kernel_local_search_evt);
+    events.push_back(kernel_costos_evt);
+    events.push_back(kernel_penMmax_evt);
+    events.push_back(kernel_cost_min_evt);
 
      cl::WaitForEvents(events);
 
-     cl_ulong time_start, time_end;
-     double total_time = 0;
+     Solution *local_best = new Solution(n_machines);
+     memcpy(local_best->cell_vector,gsol+min_i,sizeof(cl_int)*n_machines);
+     local_best->cost = min_cost;
 
-     status = kernel_costos_evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_start);
-     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_START");
-     status = kernel_costos_evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_end);
-     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_END");
+	 delete current_solution;
 
-     total_time = time_end - time_start;
+	 uint i = 0;
+	 while(tabu_list->is_tabu(local_best) && i<n_machines*n_machines) {
+         memcpy(local_best->cell_vector,gsol+i,sizeof(cl_int)*n_machines);
+         local_best->cost = out_cost[i];
+         i++;
+     }
 
-     status = kernel_penMmax_evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_start);
-     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_START");
-     status = kernel_penMmax_evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_end);
-     CHECK_OPENCL_ERROR(status,"Error : CL_PROFILING_COMMAND_END");
+	 current_solution = local_best;
 
-     total_time += time_end - time_start;
+	if(min_cost < (uint)global_best_cost){
+		delete global_best;
+		global_best = current_solution->clone();
+		global_best_cost = min_cost;
+	}
 
-     iter_cost_time += total_time;
-
-     // --------------------------------------------------------------------------
-
-     // Enqueue readBuffer
-     cl::Event readEvt1;
-     status = queue.enqueueReadBuffer(
-    		 	 buf_out_cost,
-                 CL_FALSE,
-                 0,
-                 sizeof(cl_uint),
-                 (void *)&cost,
-                 NULL,
-                 &readEvt1);
-     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueReadBuffer failed. (buf_out_cost)");
-
-     status = queue.flush();
-     CHECK_OPENCL_ERROR(status, "cl::CommandQueue.flush failed.");
-
-     std::vector<cl::Event> events_read;
-     events_read.push_back(readEvt1);
-
-     cl::WaitForEvents(events_read);
-
-    return (long)cost;
+	 printf("min_cost: %i\n",min_cost);
+	 return 0;
 }
 
 } /* namespace tabu */

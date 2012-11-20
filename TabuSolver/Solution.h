@@ -20,6 +20,7 @@ public:
 	void init();
 	int exchange(unsigned int i,unsigned int j);
 	Solution *clone();
+	int cost;
 private:
 	unsigned int n_machines;
 

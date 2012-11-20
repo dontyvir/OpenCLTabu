@@ -48,7 +48,7 @@ protected:
 	unsigned int n_parts;
 	unsigned int max_machines_cell;
 	virtual void init();
-	void local_search();
+	virtual int local_search();
 	void global_search();
 	unsigned int n_cells;
 	virtual long get_cost(Solution *solution);

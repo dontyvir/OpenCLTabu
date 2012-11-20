@@ -208,7 +208,7 @@ void Solver::init() {
 
 }
 
-void Solver::local_search(){
+int Solver::local_search(){
 
 	// moves : vector permutation
 
@@ -262,6 +262,8 @@ void Solver::local_search(){
 	delete current_solution;
 	current_solution = local_best;
 	tabu_list->add_tabu(current_solution);
+
+	return 0;
 }
 
 void Solver::global_search() {
@@ -295,6 +297,7 @@ void Solver::global_search() {
 	}
 
 	int cost = get_cost(current_solution);
+	current_solution->cost = cost;
 	if(cost < global_best_cost){
 		delete global_best;
 		global_best = current_solution->clone();
@@ -363,7 +366,7 @@ Solution *Solver::solve(){
 void Solver::print_solution(Solution *sol){
 	for(unsigned int j=0;j<n_machines;j++)
 		std::cout<< sol->cell_vector[j] << " ";
-	std::cout<< "  cost: "<< get_cost(sol);
+	std::cout<< "  cost: "<< sol->cost << "|" << get_cost(sol);
 	std::cout<< "  global best: "<< global_best_cost;
 	std::cout << std::endl;
 }

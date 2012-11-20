@@ -18,6 +18,7 @@ namespace tabu {
 Solution::Solution(unsigned int n_machines) {
 	this->n_machines = n_machines;
 	this->cell_vector = new int[n_machines];
+	this->cost = -1;
 	//std::fill( this->cell_vector, this->cell_vector+n_machines, -1 );
 }
 

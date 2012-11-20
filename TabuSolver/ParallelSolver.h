@@ -54,21 +54,29 @@ public:
 
 private:
 	cl::Context context;
+	cl::Kernel kernel_local_search;
 	cl::Kernel kernel_cost;
-	cl::Kernel kernel_pen;
 	cl::Kernel kernel_pen_Mmax;
+	cl::Kernel kernel_cost_min;
 	cl::CommandQueue queue;
-	long get_cost(Solution *solution);
+	int local_search();
 	long get_cpu_cost(Solution *solution);
 	int OpenCL_init();
 	void init();
 	VariableMatrix *vector_to_var_mat(std::vector<std::vector<int> > vector,int max_cols);
 	StaticMatrix *matrix_to_StaticMatrix(Matrix *mat);
-
+	ClParams *params;
+	cl_uint *out_cost;
 	cl::Buffer buf_out_cost;
     cl::Buffer buf_cl_params;
     cl::Buffer buf_incidence_matrix;
-    cl::Buffer buf_sol;
+    cl::Buffer buf_cur_sol;
+    cl_int *gsol;
+    cl::Buffer buf_gsol;
+    cl_uint min_i;
+    cl::Buffer buf_min_i;
+    cl_uint min_cost;
+    cl::Buffer buf_min_cost;
 };
 
 } /* namespace tabu */
