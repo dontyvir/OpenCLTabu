@@ -22,6 +22,7 @@ ParallelSolver::ParallelSolver(unsigned int max_iterations,
 	gsol = NULL;
 	min_i = 0;
 	min_cost = UINT_MAX;
+	calc_i = NULL;
 
 }
 
@@ -30,6 +31,7 @@ ParallelSolver::~ParallelSolver() {
 	delete params;
 	delete[] gsol;
 	delete[] out_cost;
+	delete[] calc_i;
 }
 
 void print_array(int *array,int size){
@@ -348,6 +350,13 @@ int ParallelSolver::OpenCL_init() {
     					&min_cost,
     					&err);
 
+    calc_i = new cl_int[n_machines*n_machines*n_machines*n_parts];
+    buf_calc_i = cl::Buffer(context,
+				CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+				sizeof(cl_int)*n_machines*n_machines*n_machines*n_parts,
+				calc_i,
+				&err);
+
     cl_int status;
 
     status = queue.flush();
@@ -383,6 +392,8 @@ int ParallelSolver::OpenCL_init() {
     status = kernel_cost.setArg(3, sizeof(cl_int*),&buf_gsol);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_gsol)");
 
+    status = kernel_cost.setArg(4, sizeof(cl_int)*n_machines,NULL);
+    CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_calc_i)");
 
     // kernel penalización Mmax
     status = kernel_pen_Mmax.setArg(0, sizeof(cl_uint*),&buf_out_cost);
@@ -442,12 +453,15 @@ int ParallelSolver::local_search(){
 
     //reset cost buffer
     memset(out_cost,0,sizeof(cl_uint)*n_machines*n_machines);
+    // reset calc i
+    memset(calc_i,0,sizeof(cl_int)*n_machines*n_machines*n_machines*n_parts);
+	min_cost = UINT_MAX;
 
     cl::NDRange globalThreads_local_search(n_machines,n_machines);
-    cl::NDRange globalThreads_cost(n_machines*n_machines*n_machines/4, n_parts, n_machines);
-    cl::NDRange localThreads_cost(4,1,1);
-    cl::NDRange globalThreads_pen_Mmax(n_machines*n_machines,n_cells,4);
-    cl::NDRange localThreads_pen_Mmax(1,1,4);
+    cl::NDRange globalThreads_cost(n_machines*n_machines*n_machines, n_machines,n_parts);
+    cl::NDRange localThreads_cost(n_machines,n_machines,1);
+    cl::NDRange globalThreads_pen_Mmax(n_machines*n_machines,n_cells,n_machines);
+    cl::NDRange localThreads_pen_Mmax(1,1,n_machines);
     cl::NDRange globalThreads_cost_min(n_machines*n_machines);
     cl::Event ndrEvt;
     cl::Event kernel_local_search_evt;
@@ -490,18 +504,29 @@ int ParallelSolver::local_search(){
 
      cl::WaitForEvents(events);
 
+
      Solution *local_best = new Solution(n_machines);
+     // Enqueue readBuffer
+     //cl_int status = 0;
+     //cl::Event readEvt,readEvt2,readEvt3;
+//     status = queue.enqueueReadBuffer(
+//    		 	 buf_min_i,
+//                 CL_FALSE,
+//                 0,
+//                 sizeof(cl_uint),
+//                 (void *)min_i,
+//                 NULL,
+//                 &readEvt);
+//     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueReadBuffer failed. (buf_out_cost)");
+
+     //TODO:
+     min_i=0;
+     min_cost = *out_cost;
+
      memcpy(local_best->cell_vector,gsol+min_i,sizeof(cl_int)*n_machines);
      local_best->cost = min_cost;
 
 	 delete current_solution;
-
-	 uint i = 0;
-	 while(tabu_list->is_tabu(local_best) && i<n_machines*n_machines) {
-         memcpy(local_best->cell_vector,gsol+i,sizeof(cl_int)*n_machines);
-         local_best->cost = out_cost[i];
-         i++;
-     }
 
 	 current_solution = local_best;
 

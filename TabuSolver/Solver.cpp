@@ -50,54 +50,8 @@ void Solver::set_incidence_matrix(Matrix *incidence_matrix) {
 	this->incidence_matrix = incidence_matrix;
 }
 
-//long Solver::get_cost_old(Solution *solution){
-//
-//	long cost = 0;
-//
-//	for(unsigned int i=0;i<n_machines;i++){ // sum i=1...M
-//
-//		for(unsigned int j=0;j<n_parts;j++){ // sum j=1...P
-//
-//			if(incidence_matrix->getMatrix()[i][j] == 1){ // a_ij = 1
-//
-//				for(unsigned int k=0;k<n_cells;k++){ // sum k=1...C
-//
-//					if(solution->cell_vector[i] != (signed int)k){ //(1 - y_ik)
-//
-//						//(z_jk)
-//						for(unsigned int i_=0;i_<n_machines;i_++){
-//
-//							if( i != i_ &&
-//								solution->cell_vector[i_] == (signed int)k
-//								&& incidence_matrix->getMatrix()[i_][j] == 1
-//							){
-//								cost++;
-//							}
-//						}
-//
-//					}
-//				}
-//			}
-//		}
-//	}
-//
-//	for(unsigned int k=0;k<n_cells;k++){
-//		int machines_cell = 0;
-//		for(unsigned int i=0;i<n_machines;i++){
-//			if(solution->cell_vector[i] == (signed int)k){
-//				machines_cell++;
-//			}
-//		}
-//		// y_ik <= Mmax
-//		if((unsigned int)machines_cell > max_machines_cell){
-//			cost += (machines_cell - max_machines_cell) * n_parts;
-//		}
-//	}
-//	return cost;
-//}
-
-
 long Solver::get_cost(Solution *solution) {
+
 	long cost = 0;
 
 	std::vector<std::vector<int> > machines_in_cells(n_cells,std::vector<int>());
@@ -110,7 +64,7 @@ long Solver::get_cost(Solution *solution) {
 				machines_not_in_cells[k].push_back(i);
 		}
 	}
-
+/*
 	for(unsigned int k=0;k<n_cells;k++){ // sum k=1...C // celdas
 
 		//------------penalizacion y_ik <= Mmax------------------
@@ -118,14 +72,12 @@ long Solver::get_cost(Solution *solution) {
 		int machines_cell = machines_in_cells[k].size();
 
 		int difference = machines_cell - max_machines_cell;
-		//int sign = 1 ^ ((unsigned int)difference >> 31); // if difference > 0 sign = 1 else sign = 0
-		//cost += difference * n_parts * sign;
 		if(difference > 0)
 			cost += (difference)*n_machines*n_parts;
 
 		// -------------------------------------------------------
 	}
-
+*/
 	int *parts_cells = new int[n_parts];
 
 	for(unsigned int j=0;j<n_parts;j++){ // todas las partes
@@ -159,7 +111,7 @@ long Solver::get_cost(Solution *solution) {
 						}
 					}
 
-					break; // se continua con otra parte
+					break; // se continua con otra celda
 				}
 			}
 		}
