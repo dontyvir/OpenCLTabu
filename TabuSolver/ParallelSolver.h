@@ -77,8 +77,6 @@ private:
     cl::Buffer buf_min_i;
     cl_uint min_cost;
     cl::Buffer buf_min_cost;
-    cl_int *calc_i;
-    cl::Buffer buf_calc_i;
 };
 
 } /* namespace tabu */

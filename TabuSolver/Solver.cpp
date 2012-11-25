@@ -64,7 +64,7 @@ long Solver::get_cost(Solution *solution) {
 				machines_not_in_cells[k].push_back(i);
 		}
 	}
-/*
+
 	for(unsigned int k=0;k<n_cells;k++){ // sum k=1...C // celdas
 
 		//------------penalizacion y_ik <= Mmax------------------
@@ -77,7 +77,7 @@ long Solver::get_cost(Solution *solution) {
 
 		// -------------------------------------------------------
 	}
-*/
+
 	int *parts_cells = new int[n_parts];
 
 	for(unsigned int j=0;j<n_parts;j++){ // todas las partes

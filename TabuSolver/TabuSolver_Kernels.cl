@@ -128,10 +128,26 @@ __kernel void costs(
 
 	int i = i_sol%(n_machines);
 
-	if(get_local_id(1)==0&&get_local_id(2)==0)
-		parts_cells[i] = 0;
+	if(get_local_id(0)==0&&get_local_id(1)==0&&get_local_id(2)==0){
+		parts_cells[0] = 0;
+		parts_cells[1] = 0;
+		parts_cells[2] = 0;
+		parts_cells[3] = 0;
+		parts_cells[4] = 0;
+		parts_cells[5] = 0;
+		parts_cells[6] = 0;
+		parts_cells[7] = 0;
+		parts_cells[8] = 0;
+		parts_cells[9] = 0;
+		parts_cells[10] = 0;
+		parts_cells[11] = 0;
+		parts_cells[12] = 0;
+		parts_cells[13] = 0;
+		parts_cells[14] = 0;
+		parts_cells[15] = 0;
+	}
 		
-	barrier( CLK_LOCAL_MEM_FENCE );
+	//barrier( CLK_LOCAL_MEM_FENCE );
 	
 	if(incidence_matrix[i*n_parts+j] == 1){
 	
@@ -141,20 +157,19 @@ __kernel void costs(
 
 				if(parts_cells[i] != -1){
 
-					if(get_group_id(0)==0&&get_group_id(1)==0&&get_group_id(2)==0){
-							printf("%u %u | %u %u %u | block %u\n",i,i_,get_group_id(0),get_group_id(1),get_group_id(2),i_);
-					}
+//					if(get_group_id(0)==0&&get_group_id(1)==0&&get_group_id(2)==0){
+//							printf("%u %u | %u %u %u | block %u\n",i,i_,get_group_id(0),get_group_id(1),get_group_id(2),i_);
+//					}
 					
-					
-						for(int il=0;il<n_machines;il++){
-							if(il!=i)
-								atomic_xchg(parts_cells+il, -1);
+						for(int il=0;il<16;il++){
+								//atomic_xchg(parts_cells+il, -1);
+								parts_cells[il] = (il!=i)?-1:0;
 						}
-						//atomic_xchg(parts_cells+i_, -1);
+
 						cost++;
 				}
-				else if(get_group_id(0)==0&&get_group_id(1)==0&&get_group_id(2)==0)
-					printf("blocked %u (%u)\n",i,i_);
+//				else if(get_group_id(0)==0&&get_group_id(1)==0&&get_group_id(2)==0)
+//					printf("blocked %u (%u)\n",i,i_);
 			}
 		}	
 	}
@@ -172,14 +187,15 @@ __kernel void penalizaciones_Mmax(
 		__global int *gsol,
 		__local uint *machines_cell){
 	
-    uint sol_offset = get_global_id(0); // n_machines * n_machines
-    uint k = get_global_id(1); // cell
-    uint lid = get_local_id(2); // local work group cell 0 ... n_machines
-    uint i = get_global_id(2); // 0 ... n_machines
+    uint sol_offset = get_global_id(1); // n_machines * n_machines
+    uint k = get_global_id(0); // cell
+    uint i = get_local_id(2); // local work group cell 0 ... n_machines
     uint cost = 0;
-
-	if(lid == 0)
+    
+	if(i == 0)
 		*machines_cell = 0;
+	
+	barrier( CLK_LOCAL_MEM_FENCE );
 	
 	int n_machines = params->n_machines;
 	int n_parts = params->n_parts;
@@ -187,18 +203,29 @@ __kernel void penalizaciones_Mmax(
 	
     __global int *item = gsol+(sol_offset*n_machines)+i;
 
-	atomic_add(machines_cell,(*item == (int)k));
+//    if(get_group_id(0)==2&&get_group_id(1)==1&&get_group_id(2)==0){
+//    	printf("%u %u %u %u\n",sol_offset,k,i,*item);
+//    }
+
+    if(*item == (int)k)
+    	atomic_add(machines_cell,1);
     
 	barrier( CLK_LOCAL_MEM_FENCE );
 	
-	if(lid == 0) {
+	//if(i == 0) {
 
-		if(*machines_cell > max_machines_cell){
-			cost = ( (*machines_cell - max_machines_cell) * n_parts ); 
-	    	//atom_add (cost_out+sol_offset,cost);
+		int _machines_cell = *machines_cell; // cached private?
+		
+		if(_machines_cell > max_machines_cell){
+			cost = ( (_machines_cell - max_machines_cell) * n_parts ); 
+			
+//			if(get_group_id(1)==1){
+//				printf("%u %u %u\n",cost,sol_offset,cost_out[sol_offset]);
+//			}
+	    	atom_add (cost_out+sol_offset,cost);
 		}
 
-	}
+	//}
 }
 
 __kernel void mejor_solucion(
