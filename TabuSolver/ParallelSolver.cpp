@@ -28,34 +28,14 @@ ParallelSolver::ParallelSolver(unsigned int max_iterations,
 ParallelSolver::~ParallelSolver() {
 
 	delete params;
-	delete[] gsol;
-	delete[] out_cost;
+//	delete[] gsol;
+//	delete[] out_cost;
 }
 
 void print_array(int *array,int size){
 
 	for(int i=0;i<size;i++){
 		std::cout << array[i] << " ";
-	}
-	std::cout << std::endl;
-}
-
-void print_2DArray(int *array, int fils, int cols){
-
-	for(int i=0;i<fils;i++){
-		for(int j=0;j<cols;j++){
-			std::cout << array[i*cols+j] << " ";
-		}
-	}
-	std::cout << std::endl;
-}
-
-void print_VarArray(int *array, int fils, int *cols, int maxcols){
-
-	for(int i=0;i<fils;i++){
-		for(int j=0;j<cols[i];j++){
-			std::cout << array[i*maxcols+j] << " ";
-		}
 	}
 	std::cout << std::endl;
 }
@@ -68,58 +48,6 @@ void print_vector(std::vector<std::vector<int> > vector){
 		}
 	}
 	std::cout << std::endl;
-}
-
-inline int different(int a,int b){
-
-	int diff = a - b;
-
-	diff = ((diff | (~diff + 1)) >> 31) & 1;
-
-	return diff;
-}
-
-inline int equal(int a,int b){
-
-	int equal = a - b;
-
-	equal = ((equal | (~equal + 1)) >> 31) & 0;
-
-	return equal;
-}
-
-inline int zero(int a){
-
-	int zero = ((a | (~a + 1)) >> 31) & 0;
-	return zero;
-}
-
-VariableMatrix* ParallelSolver::vector_to_var_mat(
-		std::vector<std::vector<int> > vector, int max_cols) {
-
-	VariableMatrix *mat = new VariableMatrix();
-
-	int vector_size = vector.size();
-
-	int *storage = new cl_int[vector_size*max_cols];
-	mat->rows = vector.size();
-	mat->cols = new cl_int[vector_size]; // cols en cada fila
-
-	memset(storage,0,sizeof(cl_int)*vector_size*max_cols);
-	memset(mat->cols,0,sizeof(cl_int)*vector_size);
-
-	for(int i=0;i<(signed int)vector_size;i++){
-		std::copy(vector[i].begin(), vector[i].begin()+vector[i].size(), storage+(i*max_cols));
-		mat->cols[i] = vector[i].size();
-	}
-	mat->storage = storage;
-
-    //-------------------------------------------------------------
-
-    //print_array(storage, vector.size()*max_cols);
-    //print_array(mat->cols, vector.size());
-
-	return mat;
 }
 
 StaticMatrix* ParallelSolver::matrix_to_StaticMatrix(Matrix *mat) {
@@ -167,10 +95,12 @@ int ParallelSolver::OpenCL_init() {
     {
         for(i = platforms.begin(); i != platforms.end(); ++i)
         {
-            if(!strcmp((*i).getInfo<CL_PLATFORM_VENDOR>(&err).c_str(), "Advanced Micro Devices, Inc."))
-            {
-                break;
-            }
+        	printf("%s\n",(*i).getInfo<CL_PLATFORM_VENDOR>(&err).c_str());
+        	if(!strcmp((*i).getInfo<CL_PLATFORM_VENDOR>(&err).c_str(), "Advanced Micro Devices, Inc."))
+			//if(!strcmp((*i).getInfo<CL_PLATFORM_VENDOR>(&err).c_str(), "Intel(R) Corporation"))
+			{
+			break;
+			}
         }
     }
     if(err != CL_SUCCESS)
@@ -203,32 +133,6 @@ int ParallelSolver::OpenCL_init() {
         std::cout << "No device available\n";
         exit(SDK_FAILURE);
     }
-
-
-    cl_uint compute_units;
-    size_t global_work_size;
-    size_t local_work_size;
-
-    devices[0].getInfo(CL_DEVICE_MAX_COMPUTE_UNITS,&compute_units);
-
-    if( dev_type == CL_DEVICE_TYPE_CPU )
-    {
-    	global_work_size = compute_units * 1;
-    	local_work_size = 1;
-    }
-    else
-    {
-    	cl_uint ws = 64;
-    	// 1 thread per core
-    	global_work_size = compute_units * 7 * ws; // 7 wavefronts per SIMD
-
-    	while( (n_machines / 4) % global_work_size != 0 )
-    		global_work_size += ws;
-
-    	local_work_size = ws;
-    }
-
-
 
     // Loading and compiling CL source
     streamsdk::SDKFile file;
@@ -302,48 +206,49 @@ int ParallelSolver::OpenCL_init() {
     params->n_parts = n_parts;
 
     buf_cl_params = cl::Buffer(context,
-    					CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
+    					CL_MEM_USE_HOST_PTR,
     					sizeof(ClParams),
     					(void *)params,
     					&err);
 
 	StaticMatrix *static_incidence = matrix_to_StaticMatrix(incidence_matrix);
     buf_incidence_matrix = cl::Buffer(context,
-    					CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+    					CL_MEM_USE_HOST_PTR,
     					sizeof(cl_int)*n_parts*n_machines,
     		    		(void *)(static_incidence->storage),
     					&err);
 
     // out buffer
-    out_cost = new cl_uint[n_machines*n_machines];
-    memset(out_cost,0,sizeof(cl_uint)*n_machines*n_machines);
+    //out_cost = new cl_uint[n_machines*n_machines];
+    //memset(out_cost,0,sizeof(cl_uint)*n_machines*n_machines);
 
     buf_out_cost = cl::Buffer(context,
-    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					CL_MEM_ALLOC_HOST_PTR,
     					sizeof(cl_uint)*n_machines*n_machines,
-    					out_cost, &err);
+    					NULL, &err);
 
     buf_cur_sol = cl::Buffer(context,
-    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					CL_MEM_USE_HOST_PTR,
     					sizeof(cl_int)*n_machines,
     					current_solution,
     					&err);
 
-    gsol = new cl_int[n_machines*n_machines*n_machines];
+    //gsol = new cl_int[n_machines*n_machines*n_machines];
+
     buf_gsol = cl::Buffer(context,
-    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					CL_MEM_ALLOC_HOST_PTR,//CL_MEM_USE_PERSISTENT_MEM_AMD,
     					sizeof(cl_int)*n_machines*n_machines*n_machines,
-    					gsol,
+    					NULL,
     					&err);
 
     buf_min_i = cl::Buffer(context,
-    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					CL_MEM_USE_HOST_PTR,
     					sizeof(cl_uint),
     					&min_i,
     					&err);
 
     buf_min_cost = cl::Buffer(context,
-    					CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+    					CL_MEM_USE_HOST_PTR,
     					sizeof(cl_uint),
     					&min_cost,
     					&err);
@@ -363,10 +268,10 @@ int ParallelSolver::OpenCL_init() {
     status = kernel_local_search.setArg(1, sizeof(cl_uint*),&buf_cur_sol);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_cur_sol)");
 
-    status = kernel_local_search.setArg(2, sizeof(cl_int)*n_machines*local_work_size, NULL);
+    status = kernel_local_search.setArg(2, sizeof(cl_int)*n_machines, NULL);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_lsol)");
 
-    status = kernel_local_search.setArg(3, sizeof(cl_uint*),&buf_gsol);
+    status = kernel_local_search.setArg(3, sizeof(cl_int*),&buf_gsol);
     CHECK_OPENCL_ERROR(status, "Kernel::setArg() failed. (buf_gsol)");
 
 
@@ -435,16 +340,44 @@ int ParallelSolver::local_search(){
     cl_int err;
     /////////////////////////runCLKernels////////////////////////////////////////
 
-    cl::Event writeEvt1;
+    cl::Event writeEvt1,writeEvt2,writeEvt3,writeEvt4;
+
+    out_cost = (cl_uint *)queue.enqueueMapBuffer(buf_out_cost,CL_FALSE,CL_MAP_WRITE,0,sizeof(cl_uint)*n_machines*n_machines,NULL,&writeEvt2,&err);
+    CHECK_OPENCL_ERROR(err, "CommandQueue::enqueueMapBuffer failed. (buf_out_cost)");
+
+    gsol = (cl_int *)queue.enqueueMapBuffer(buf_gsol,CL_FALSE,CL_MAP_WRITE,0,sizeof(cl_int)*n_machines*n_machines*n_machines,NULL,&writeEvt1,&err);
+    CHECK_OPENCL_ERROR(err, "CommandQueue::enqueueMapBuffer failed. (buf_gsol)");
+
+    err = queue.flush();
+    CHECK_OPENCL_ERROR(err, "cl::CommandQueue.flush failed.");
+
+    std::vector<cl::Event> write_events;
+    write_events.push_back(writeEvt1);
+    write_events.push_back(writeEvt2);
+    cl::WaitForEvents(write_events);
 
     // llenar buffer gsol
     for(unsigned int i=0;i<n_machines*n_machines;i++){
-    	memcpy(gsol+(i*n_machines),current_solution->cell_vector,sizeof(int)*n_machines);
+    	memcpy(gsol+(i*n_machines),current_solution->cell_vector,sizeof(cl_int)*n_machines);
     }
 
     //reset cost buffer
     memset(out_cost,0,sizeof(cl_uint)*n_machines*n_machines);
-	min_cost = UINT_MAX;
+    min_cost = UINT_MAX;
+
+	err = queue.enqueueUnmapMemObject(buf_gsol,gsol,NULL,&writeEvt3);
+    CHECK_OPENCL_ERROR(err, "CommandQueue::enqueueUnMapMemObject failed. (buf_gsol)");
+
+	err = queue.enqueueUnmapMemObject(buf_out_cost,out_cost,NULL,&writeEvt4);
+    CHECK_OPENCL_ERROR(err, "CommandQueue::enqueueUnMapMemObject failed. (buf_out_cost)");
+
+    err = queue.flush();
+    CHECK_OPENCL_ERROR(err, "cl::CommandQueue.flush failed.");
+
+	write_events.clear();
+    write_events.push_back(writeEvt3);
+    write_events.push_back(writeEvt4);
+    cl::WaitForEvents(write_events);
 
     cl::NDRange globalThreads_local_search(n_machines,n_machines);
     cl::NDRange globalThreads_cost(n_machines*n_machines*n_machines, n_machines,n_parts);
@@ -483,7 +416,8 @@ int ParallelSolver::local_search(){
 
     if (err != CL_SUCCESS) { std::cout << "CommandQueue::enqueueNDRangeKernel() failed (" << err << ")\n"; }
 
-    queue.flush();
+    err=queue.flush();
+    CHECK_OPENCL_ERROR(err, "cl::CommandQueue.flush failed.");
 
     std::vector<cl::Event> events;
     events.push_back(kernel_local_search_evt);
@@ -491,30 +425,37 @@ int ParallelSolver::local_search(){
     events.push_back(kernel_penMmax_evt);
     events.push_back(kernel_cost_min_evt);
 
-     cl::WaitForEvents(events);
-
+    cl::WaitForEvents(events);
 
      Solution *local_best = new Solution(n_machines);
      // Enqueue readBuffer
-     //cl_int status = 0;
-     //cl::Event readEvt,readEvt2,readEvt3;
-//     status = queue.enqueueReadBuffer(
-//    		 	 buf_min_i,
-//                 CL_FALSE,
-//                 0,
-//                 sizeof(cl_uint),
-//                 (void *)min_i,
-//                 NULL,
-//                 &readEvt);
-//     CHECK_OPENCL_ERROR(status, "CommandQueue::enqueueReadBuffer failed. (buf_out_cost)");
+     cl::Event readEvt3;
 
-     //TODO:
-//     min_i=0;
-//     min_cost = *out_cost;
+     gsol = (cl_int *)queue.enqueueMapBuffer(buf_gsol,CL_FALSE,CL_MAP_READ,0,sizeof(cl_int)*n_machines*n_machines*n_machines,NULL,&readEvt3,&err);
+     CHECK_OPENCL_ERROR(err, "CommandQueue::enqueueMapBuffer failed. (buf_min_cost)");
+
+     err = queue.flush();
+     CHECK_OPENCL_ERROR(err, "cl::CommandQueue.flush failed.");
+
+     std::vector<cl::Event> read_events;
+     read_events.push_back(readEvt3);
+
+     cl::WaitForEvents(read_events);
 
      memcpy(local_best->cell_vector,gsol+min_i,sizeof(cl_int)*n_machines);
+
+     //TODO
+	 printf("min_cost: %i\n",min_cost);
+     min_cost = get_cost(local_best);
+
      //local_best->cost = get_cost(local_best);
      local_best->cost = min_cost;
+
+ 	 err = queue.enqueueUnmapMemObject(buf_gsol,gsol,NULL,&readEvt3);
+     CHECK_OPENCL_ERROR(err, "CommandQueue::enqueueUnMapMemObject failed. (buf_gsol)");
+
+     err = queue.flush();
+     CHECK_OPENCL_ERROR(err, "cl::CommandQueue.flush failed.");
 
 	 delete current_solution;
 
@@ -526,7 +467,11 @@ int ParallelSolver::local_search(){
 		global_best_cost = min_cost;
 	}
 
-	 printf("min_cost: %i\n",min_cost);
+     read_events.clear();
+     read_events.push_back(readEvt3);
+
+     cl::WaitForEvents(read_events);
+
 	 return 0;
 }
 

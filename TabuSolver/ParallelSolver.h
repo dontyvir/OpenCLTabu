@@ -16,6 +16,7 @@
 #include <SDKUtil/SDKCommon.hpp>
 #include <SDKUtil/SDKFile.hpp>
 #include <SDKUtil/SDKApplication.hpp>
+#include <SDKUtil/SDKCommandArgs.hpp>
 #include "Solver.h"
 
 namespace tabu {
@@ -63,7 +64,6 @@ private:
 	long get_cpu_cost(Solution *solution);
 	int OpenCL_init();
 	void init();
-	VariableMatrix *vector_to_var_mat(std::vector<std::vector<int> > vector,int max_cols);
 	StaticMatrix *matrix_to_StaticMatrix(Matrix *mat);
 	ClParams *params;
 	cl_uint *out_cost;
